@@ -9,7 +9,8 @@
             [java-time :as time]
             ;; [disreguard.config :as config]
             [conman.core :as conman]
-            [clojure.java.jdbc :as jdbc])
+            [clojure.java.jdbc :as jdbc]
+            [clojure.spec.alpha :as spec])
   (:import [java.time ZoneId]))
 
 (defn edn-write [obj fpath]
@@ -65,12 +66,13 @@
       (apply str $))))
 
 (defn create-table-field [field-in]
-  (let [field-name (-> (:name field-in)
-                       (#(if (= (:type field-in) :foreign-key)
-                          (str % "-id")
-                          %))
+  (let [field-validated (spec/assert ::entities-schemas/field field-in)
+        field-name (-> (:name field-validated)
+                       (#(if (= (:type field-validated) :foreign-key)
+                           (str % "-id")
+                           %))
                        undasherize)]
-   (str "    " field-name " " (field-type-to-ddl field-in))))
+    (str "    " field-name " " (field-type-to-ddl field-validated))))
 
 (defn create-table [table-in]
   (let [fields-sql (as-> (:fields table-in) $
@@ -143,10 +145,10 @@
   (fnames-in-dir migrations-dir))
 
 ;; (def ^:dynamic entities nil)
-
+(spec/check-asserts true)
 
 (defn make-migration-file! [entities-in]
-  (let [;; entities-in entities
+  (let [entities-validated (spec/assert ::entities-schemas/entities entities-in)
         ensure-mig-dir-exists-res
         (when-not (.exists migrations-dir)
           (.mkdir migrations-dir)
@@ -154,7 +156,7 @@
             (throw (Exception. "should exist"))))
         existing-mig-fpaths (map #(str migrations-dir-name "/" %) (get-all-migration-file-names))
         diffs (map edn-read existing-mig-fpaths)
-        next-diff (make-migration diffs entities-in)
+        next-diff (make-migration diffs entities-validated)
         mig-num (-> (count existing-mig-fpaths) inc)
         mig-time-str (as-> (time/zoned-date-time) $
                        (.withZoneSameInstant $ (ZoneId/of "UTC"))
