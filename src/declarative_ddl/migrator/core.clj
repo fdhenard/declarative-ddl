@@ -156,14 +156,18 @@
             (throw (Exception. "should exist"))))
         existing-mig-fpaths (map #(str migrations-dir-name "/" %) (get-all-migration-file-names))
         diffs (map edn-read existing-mig-fpaths)
-        next-diff (make-migration diffs entities-validated)
-        mig-num (-> (count existing-mig-fpaths) inc)
-        mig-time-str (as-> (time/zoned-date-time) $
-                       (.withZoneSameInstant $ (ZoneId/of "UTC"))
-                       (time/format "yyyy-MM-dd'T'HH-mm-ss-SSSX" $))
-        mig-fname (format "%04d-migration-%s.edn" mig-num mig-time-str)
-        file-out-path (str migrations-dir-name "/" mig-fname)]
-    (edn-write next-diff file-out-path)))
+        next-diff (make-migration diffs entities-validated)]
+    (if (and (empty? (:keys-missing-in-1 next-diff))
+             (empty? (:keys-missing-in-2 next-diff))
+             (empty? (:value-differences next-diff)))
+      (throw (Exception. "no changes in entities"))
+      (let [mig-num (-> (count existing-mig-fpaths) inc)
+            mig-time-str (as-> (time/zoned-date-time) $
+                           (.withZoneSameInstant $ (ZoneId/of "UTC"))
+                           (time/format "yyyy-MM-dd'T'HH-mm-ss-SSSX" $))
+            mig-fname (format "%04d-migration-%s.edn" mig-num mig-time-str)
+            file-out-path (str migrations-dir-name "/" mig-fname)]
+        (edn-write next-diff file-out-path)))))
 
 (def migration-table-ddl
   (clojure.string/join
