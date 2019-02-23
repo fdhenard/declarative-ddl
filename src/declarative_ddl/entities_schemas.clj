@@ -57,7 +57,8 @@
   (spec/keys :req-un [:field/type :field/name :field/total-length :field/decimal-places]
              :opt-un [:field-numeric/default]))
 (defmethod field-type :date [_]
-  (spec/keys :req-un [:field/type :field/name]))
+  (spec/keys :req-un [:field/type :field/name]
+             :opt-un [:field-datetime/default]))
 (defmethod field-type :date-time [_]
   (spec/keys :req-un [:field/type :field/name]
              :opt-un [:field-datetime/default]))

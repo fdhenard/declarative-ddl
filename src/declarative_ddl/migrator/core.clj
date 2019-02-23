@@ -46,7 +46,12 @@
                             :boolean
                             "BOOLEAN"
                             :date-time
-                            "TIMESTAMP WITH TIME ZONE")
+                            "TIMESTAMP WITH TIME ZONE"
+                            :numeric
+                            (str "NUMERIC(" (:total-length field-in) ", " (:decimal-places field-in) ")")
+                            :date
+                            "DATE"
+                            )
         unique-ddl (when (and (contains? field-in :unique)
                             (:unique field-in))
                      "UNIQUE")
@@ -57,7 +62,7 @@
         default-ddl (when (contains? field-in :default)
                       (let [default-val-initial (:default field-in)
                             default-val (case default-val-initial
-                                          :current-date-time "CURRENT_TIMESTAMP"
+                                          :current-time "CURRENT_TIMESTAMP"
                                           default-val-initial)]
                         (str "DEFAULT(" default-val ")")))
         combined-ddl (remove nil? [type-specific-ddl unique-ddl null-ddl default-ddl])]
@@ -101,10 +106,20 @@
     :else
     (throw (Exception. "this case has not yet been implemented - size of path"))))
 
+(defn make-addition-ddl [addition-diff]
+  (cond
+    (= 1 (count (:path addition-diff)))
+    (create-table (:value addition-diff))
+    :else
+    (throw (Exception. "this case has not been implemented - make-addition-ddl - size of path"))))
+
 (defn diff-to-ddl [diff-in]
-  (as-> (map value-difference (:value-differences diff-in)) $
-    (interpose "\n" $)
-    (apply str $)))
+  (let [val-diff-ddl (map value-difference (:value-differences diff-in))
+        addition-ddl (map make-addition-ddl (:keys-missing-in-1 diff-in))
+        result-ddl-seq (concat val-diff-ddl addition-ddl)]
+    (as-> result-ddl-seq $
+      (interpose "\n" $)
+      (apply str $))))
 
 ;; regarding (dissoc :choices) - postgres can do a check constraint on the data in
 ;; a character field, but for simplicity sake for now, I will ignore that feature
@@ -194,31 +209,33 @@
   (-> (subs migration-fname 0 4) Integer/parseInt))
 
 
-(defn migrate! [db-url]
-  (let [
-        ;; env (cprop.core/load-config
-        ;;      :merge
-        ;;      [(cprop.source/from-system-props)
-        ;;       (cprop.source/from-env)])
-        db-conn (conman/connect! {:jdbc-url db-url})
-        all-mig-file-names (get-all-migration-file-names)]
+(defn migrate! [db-url &{:keys [:dry-run]
+                         :or {:dry-run false}}]
+  (let [db-conn (conman/connect! {:jdbc-url db-url})
+        all-mig-file-names (get-all-migration-file-names)
+        ;; _ (println "all-mig-file-names:" all-mig-file-names)
+        ]
     (if (empty? all-mig-file-names)
       ;; TODO - better logging
       (println "nothing to do here.  No migration files")
       (try
         (jdbc/with-db-transaction [t-conn db-conn]
           (let [last-mig-num (get-last-migration-number t-conn)
+                ;; _ (println "last-mig-num:" last-mig-num)
                 db-says-initial? (nil? last-mig-num)
                 files-say-initial?
-                (let [first-mig-num-from-file
-                      (get-migration-number-from-filename (first all-mig-file-names))]
-                  (= first-mig-num-from-file 1))
+                (let [mig-num-from-last-file
+                      (get-migration-number-from-filename (last all-mig-file-names))
+                      ;; _ (println "mig-num-from-last-file: " mig-num-from-last-file)
+                      ]
+                  (= mig-num-from-last-file 1))
                 both-say-initial? (= db-says-initial? files-say-initial?)]
             (if (not both-say-initial?)
               (throw (Exception. (str "conflicting results on whether this is the initial migration or not. db-says-initial? = " db-says-initial? ", files-say-initial? = " files-say-initial?)))
               (let [remaining-mig-file-names (if (nil? last-mig-num)
                                                all-mig-file-names
-                                               (filter #(> last-mig-num (get-migration-number-from-filename %)) all-mig-file-names))
+                                               (filter #(> (get-migration-number-from-filename %) last-mig-num) all-mig-file-names))
+                    _ (println "remaining-mig-file-names:" remaining-mig-file-names)
                     init-result (when (nil? last-mig-num)
                                   (jdbc/execute! t-conn [migration-table-ddl]))]
                 (doseq [remaining-mig-file-name remaining-mig-file-names]
@@ -226,10 +243,11 @@
                         mig-number (get-migration-number-from-filename remaining-mig-file-name)
                         mig-diff (edn-read mig-file-path)
                         the-ddl (diff-to-ddl mig-diff)
-                        _ (println the-ddl)
-                        ddl-exec-res (jdbc/execute! t-conn the-ddl)
-                        migrations-table-append-res
-                        (jdbc/insert! t-conn :migrations {:number mig-number})]))))))
+                        _ (println "the-ddl:" the-ddl)]
+                    (if dry-run
+                      nil
+                      (let [ddl-exec-res (jdbc/execute! t-conn the-ddl)
+                            migrations-table-append-res (jdbc/insert! t-conn :migrations {:number mig-number})]))))))))
         (finally
           (conman/disconnect! db-conn))))))
 
