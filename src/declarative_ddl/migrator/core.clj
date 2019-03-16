@@ -1,13 +1,10 @@
 (ns declarative-ddl.migrator.core
-  (:require [cognitect.transit :as transit]
-            [clojure.test :as test]
-            [diff-as-list.core :as dal]
+  (:require [diff-as-list.core :as dal]
             [clojure.pprint :as pp]
             [clojure.string :as string]
             [declarative-ddl.entities-schemas :as entities-schemas]
             [clojure.spec.alpha :as spec]
             [java-time :as time]
-            ;; [disreguard.config :as config]
             [conman.core :as conman]
             [clojure.java.jdbc :as jdbc]
             [clojure.spec.alpha :as spec])
@@ -51,6 +48,8 @@
                             (str "NUMERIC(" (:total-length field-in) ", " (:decimal-places field-in) ")")
                             :date
                             "DATE"
+                            :int
+                            "INTEGER"
                             )
         unique-ddl (when (and (contains? field-in :unique)
                             (:unique field-in))
@@ -77,12 +76,12 @@
                            (str % "-id")
                            %))
                        undasherize)]
-    (str "    " field-name " " (field-type-to-ddl field-validated))))
+    (str field-name " " (field-type-to-ddl field-validated))))
 
 (defn create-table [table-in]
   (let [fields-sql (as-> (:fields table-in) $
                     (map remove-key-from-kv-pair $)
-                    (map create-table-field $)
+                    (map #(str "    " (create-table-field %)) $)
                     (interpose ",\n" $))
 
         sql-vec (concat ["CREATE TABLE " (undasherize (:name table-in)) " (\n"]
@@ -91,7 +90,7 @@
                         ["\n);"])]
       (apply str sql-vec)))
 
-(defn value-difference [val-diff]
+(defn value-difference-to-ddl [val-diff]
   (cond
     (empty? (:path val-diff))
     (cond
@@ -106,17 +105,105 @@
     :else
     (throw (Exception. "this case has not yet been implemented - size of path"))))
 
-(defn make-addition-ddl [addition-diff]
-  (cond
-    (= 1 (count (:path addition-diff)))
-    (create-table (:value addition-diff))
-    :else
-    (throw (Exception. "this case has not been implemented - make-addition-ddl - size of path"))))
+(defn alter-table-add-column [table-key field-in]
+  (let [sql-vec ["ADD COLUMN " (create-table-field field-in)]]
+    sql-vec))
+
+(defn field-addition [addition-diff]
+  {:table (first (:path addition-diff))
+   :type :field-addition
+   :field (:value addition-diff)})
+
+(defn add-rem-xform [addition-diff]
+  (let [diff-path (:path addition-diff)]
+   (cond
+     (= 1 (count diff-path))
+     {:change-type [:table-add-remove]
+      :table (:value addition-diff)}
+     (and (= 3 (count diff-path))
+          (= :fields (get diff-path 1)))
+     {:change-type [:field-add-remove]
+      :table-name (first diff-path)
+      :field (:value addition-diff)}
+     :else
+     (throw (Exception. "this case has not been implemented - make-addition-ddl - size of path")))))
+
+(defn add-rem-to-ddl [add-rem]
+  (case (:change-type add-rem)
+    [:table-add-remove :addition]
+    (create-table (:table add-rem))
+    [:table-add-remove :removal]
+    (str "DROP TABLE " (-> add-rem :table :name undasherize) ";")
+    [:alter-table]
+    (let [add-rem-fields-sql (as-> (:changes add-rem) $
+                               (map
+                                (fn [change]
+                                  (case (:change-type change)
+                                    [:field-add-remove :addition]
+                                    (str "ADD COLUMN "
+                                         (-> change :field :name undasherize) " "
+                                         (field-type-to-ddl (:field change)))
+                                    [:field-add-remove :removal]
+                                    (str "DROP COLUMN " (-> change :field :name undasherize))
+                                    :else
+                                    (throw (Exception. (str "not prepared to handle change type " (:change-type change))))))
+                                $)
+                               (map #(str "    " %) $)
+                               (interpose ",\n" $))
+          sql-vec (concat ["ALTER TABLE " (-> add-rem :table-name name undasherize) "\n"]
+                          add-rem-fields-sql
+                          ";")]
+      (apply str sql-vec))
+    (throw (Exception. (str "not yet able to handle change-type of " (:change-type add-rem))))))
+
+(defn add-rems-to-ddl [diff-in]
+  (let [xform-add-rems
+        (fn [keys-missing-diffs addition-or-removal]
+          (as-> keys-missing-diffs $
+            (map add-rem-xform $)
+            (map
+             (fn [_diff]
+               (as-> _diff $$
+                 (let [new-key (conj (:change-type _diff) addition-or-removal)]
+                   (assoc $$ :change-type new-key))))
+             $)))
+        additions-xformed (xform-add-rems (:keys-missing-in-1 diff-in) :addition)
+        removals-xformed (xform-add-rems (:keys-missing-in-2 diff-in) :removal)
+        combined (concat additions-xformed removals-xformed)
+        ;; _ (clojure.pprint/pprint combined)
+        grouped-by (group-by
+                    (fn [x]
+                      (case (first (:change-type x))
+                        :table-add-remove :none
+                        :field-add-remove
+                        [:alter-table (:table-name x)]))
+                    combined)
+        ;; _ (clojure.pprint/pprint grouped-by)
+        non-grouped (:none grouped-by)
+        remaining-grouped (dissoc grouped-by :none)
+        ;; _ (clojure.pprint/pprint remaining-grouped)
+        remaining-changes (map
+                           (fn [[k v]]
+                             (cond
+                               (= :alter-table (first k))
+                               {:change-type [:alter-table]
+                                :table-name (get k 1)
+                                :changes v}
+                               :else
+                               (throw (Exception. "not prepared to handle case"))))
+                           remaining-grouped)
+        ready-for-ddl (concat non-grouped remaining-changes)
+        ;; _ (clojure.pprint/pprint ready-for-ddl)
+        the-ddl (map add-rem-to-ddl ready-for-ddl)
+        ;; _ (println the-ddl)
+        ]
+    the-ddl))
 
 (defn diff-to-ddl [diff-in]
-  (let [val-diff-ddl (map value-difference (:value-differences diff-in))
-        addition-ddl (map make-addition-ddl (:keys-missing-in-1 diff-in))
-        result-ddl-seq (concat val-diff-ddl addition-ddl)]
+  (let [;; _ (println "diff-in:" diff-in)
+        val-diff-ddl (map value-difference-to-ddl (:value-differences diff-in))
+        diffs-xformed (add-rems-to-ddl diff-in)
+        result-ddl-seq (concat val-diff-ddl diffs-xformed)]
     (as-> result-ddl-seq $
       (interpose "\n" $)
       (apply str $))))
@@ -209,8 +296,8 @@
   (-> (subs migration-fname 0 4) Integer/parseInt))
 
 
-(defn migrate! [db-url &{:keys [:dry-run]
-                         :or {:dry-run false}}]
+(defn migrate! [db-url & {:keys [dry-run]
+                          :or {dry-run false}}]
   (let [db-conn (conman/connect! {:jdbc-url db-url})
         all-mig-file-names (get-all-migration-file-names)
         ;; _ (println "all-mig-file-names:" all-mig-file-names)
@@ -250,8 +337,3 @@
                             migrations-table-append-res (jdbc/insert! t-conn :migrations {:number mig-number})]))))))))
         (finally
           (conman/disconnect! db-conn))))))
-
-;; (defn migrate-tester []
-;;   (let [migration-diff (make-migration [] entities-for-testing)
-;;         the-ddl (diff-to-ddl migration-diff)]
-;;     (print the-ddl)))

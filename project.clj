@@ -6,5 +6,5 @@
   :dependencies [[org.clojure/clojure "1.10.0"]
                  [diff-as-list "2.2.6"]
                  [clojure.java-time "0.3.2"]
-                 ]
+                 [conman "0.8.3"]]
   :repl-options {:init-ns declarative-ddl.core})
