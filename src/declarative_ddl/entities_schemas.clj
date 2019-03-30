@@ -14,12 +14,13 @@
 (spec/def :field-character/default string?)
 ;; (spec/def :field/default (spec/or :default-boolean boolean?
 ;;                                   :default-datetime #{:current-time}))
-(spec/def :field/max-length int?)
-(spec/def :field/total-length int?)
-(spec/def :field/decimal-places int?)
+(spec/def :field/max-length pos-int?)
+(spec/def :field/total-length pos-int?)
+(spec/def :field/decimal-places pos-int?)
+(spec/def :field/null boolean?)
 
-(spec/def :field/common (spec/keys :req-un [:field/type :field/name]
-                                   :opt-un [:field/default]))
+;; (spec/def :field/common (spec/keys :req-un [:field/type :field/name]
+;;                                    :opt-un [:field/default]))
 
 
 ;; (defmulti field-type :type)
@@ -44,24 +45,25 @@
 
 (defmethod field-type :character [_]
   (spec/keys :req-un [:field/type :field/name :field/max-length]
-             :opt-un [:field-character/default]))
+             :opt-un [:field-character/default :field/null]))
 (defmethod field-type :int [_]
   (spec/keys :req-un [:field/type :field/name]
-             :opt-un [:field-int/default]))
+             :opt-un [:field-int/default :field/null]))
 (defmethod field-type :foreign-key [_]
-  (spec/keys :req-un [:field/type :field/name :field/references]))
+  (spec/keys :req-un [:field/type :field/name :field/references]
+             :opt-un [:field/null]))
 (defmethod field-type :boolean [_]
   (spec/keys :req-un [:field/type :field/name]
-             :opt-un [:field-boolean/default]))
+             :opt-un [:field-boolean/default :field/null]))
 (defmethod field-type :numeric [_]
   (spec/keys :req-un [:field/type :field/name :field/total-length :field/decimal-places]
-             :opt-un [:field-numeric/default]))
+             :opt-un [:field-numeric/default :field/null]))
 (defmethod field-type :date [_]
   (spec/keys :req-un [:field/type :field/name]
-             :opt-un [:field-datetime/default]))
+             :opt-un [:field-datetime/default :field/null]))
 (defmethod field-type :date-time [_]
   (spec/keys :req-un [:field/type :field/name]
-             :opt-un [:field-datetime/default]))
+             :opt-un [:field-datetime/default :field/null]))
 ;; (defmethod field-type :int [_]
 ;;   (spec/keys :req-un [:field/type :field/name]
 ;;              :opt-un [:field/default]))
