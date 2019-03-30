@@ -330,9 +330,9 @@
                         mig-number (get-migration-number-from-filename remaining-mig-file-name)
                         mig-diff (edn-read mig-file-path)
                         the-ddl (diff-to-ddl mig-diff)
-                        _ (println "the-ddl:" the-ddl)]
+                        _ (println (str "the-ddl:\n" the-ddl))]
                     (if dry-run
-                      nil
+                      (println "dry run only; DDL not exectuted.")
                       (let [ddl-exec-res (jdbc/execute! t-conn the-ddl)
                             migrations-table-append-res (jdbc/insert! t-conn :migrations {:number mig-number})]))))))))
         (finally
