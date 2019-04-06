@@ -1,22 +1,26 @@
 # declarative-ddl
 
-A Clojure library designed to ... well, that part is up to you.
+WIP
+
+Declarative database schemas in Clojure data structures.  Create Postgresql (maybe other DBs to come) migrations from those declared schemas when the change.  Similarly to how Django and Rails models are declared by the developer and migrations are created from those.
+
+Also creates clojure.spec.alpha schemas from the field definitions in the schema declaration.
 
 ## Usage
 
-FIXME
+### CLJS
+
+#### run tests
+
+`$ lein doo node test`
+
+#### run figwheel repl
+
+- open `./figwheel.html` file in browser
+- `$ lein figwheel repl`
 
 ## License
 
-Copyright © 2019 FIXME
+Copyright © 2019 Frank Henard
 
-This program and the accompanying materials are made available under the
-terms of the Eclipse Public License 2.0 which is available at
-http://www.eclipse.org/legal/epl-2.0.
-
-This Source Code may also be made available under the following Secondary
-Licenses when the conditions for such availability set forth in the Eclipse
-Public License, v. 2.0 are satisfied: GNU General Public License as published by
-the Free Software Foundation, either version 2 of the License, or (at your
-option) any later version, with the GNU Classpath Exception which is available
-at https://www.gnu.org/software/classpath/license.html.
+MIT
