@@ -3,18 +3,20 @@
             #?(:cljs [decimal.core :as decimal])))
 
 (defn will-coerce-to-decimal? [x]
-  #?(:clj (try
-            (bigdec x)
-            true
-            (catch java.lang.NumberFormatException nfe
-              false))
-     :cljs (try
-             (decimal/decimal x)
-             true
-             (catch js/Error e
-               (if (clojure.string/starts-with? (.-message e) "[DecimalError] Invalid argument:")
-                 false
-                 (throw e))))))
+  (if (nil? x)
+    false
+    #?(:clj (try
+              (bigdec x)
+              true
+              (catch java.lang.NumberFormatException nfe
+                false))
+       :cljs (try
+               (decimal/decimal x)
+               true
+               (catch js/Error e
+                 (if (clojure.string/starts-with? (.-message e) "[DecimalError] Invalid argument:")
+                   false
+                   (throw e)))))))
 
 
 (defn coerce-to-decimal [x]
