@@ -8,11 +8,12 @@ Also creates clojure.spec.alpha schemas from the field definitions in the schema
 
 ## Usage
 
+### automated testing
+
+- clj `$ lein test`
+- cljs `$ lein doo node test`
+
 ### CLJS
-
-#### run tests
-
-`$ lein doo node test`
 
 #### run figwheel repl
 

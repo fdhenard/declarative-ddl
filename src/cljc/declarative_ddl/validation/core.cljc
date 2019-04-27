@@ -1,6 +1,8 @@
 (ns declarative-ddl.validation.core
   (:require [clojure.spec.alpha :as spec]
-            #?(:cljs [decimal.core :as decimal])))
+            #?(:cljs [decimal.core :as decimal])
+            [declarative-ddl.entities-var-alpha :as entities-var]
+            [declarative-ddl.cljc.utils.core :as cljc-utils]))
 
 (defn will-coerce-to-decimal? [x]
   (if (nil? x)
@@ -61,3 +63,10 @@
      (let [err-msg (str "no validation defined for " field-type)]
        (throw #?(:clj (Exception. err-msg)
                  :cljs (js/Error. err-msg)))))))
+
+
+(defn get-spec [entity-kw field-kw]
+  (let [field-def (-> @entities-var/entities-as-map entity-kw :fields field-kw)
+        _ (cljc-utils/log (str "field-def:\n" (cljc-utils/pp field-def)))
+        res (field-def-to-spec field-def)]
+    res))

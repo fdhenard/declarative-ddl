@@ -1,8 +1,8 @@
 (defproject declarative-ddl "0.1.1-SNAPSHOT"
-  :description "FIXME: write description"
-  :url "http://example.com/FIXME"
-  :license {:name "EPL-2.0 OR GPL-2.0-or-later WITH Classpath-exception-2.0"
-            :url "https://www.eclipse.org/legal/epl-2.0/"}
+  :description "Database schema declarations with Clojure, plus utilities around that"
+  :url "https://github.com/fdhenard/declarative-ddl"
+  :license {:name "MIT"
+            :url "https://opensource.org/licenses/MIT"}
   :dependencies [[org.clojure/clojure "1.10.0"]
                  [diff-as-list "2.2.6"]
                  [clojure.java-time "0.3.2"]
@@ -10,7 +10,7 @@
                  [org.clojure/clojurescript "1.10.520"]
                  [funcool/decimal "1.0.2"]]
   :repl-options {:init-ns declarative-ddl.core}
-  :source-paths ["src/clj" "src/cljc"]
+  :source-paths ["src/clj" "src/cljc" "src/cljs"]
   :plugins [[lein-cljsbuild "1.1.7"]
             [lein-doo "0.1.10"]
             [lein-figwheel "0.5.18"]]
@@ -24,12 +24,7 @@
                                          }}
                        :repl {:source-paths ["src/cljs" "src/cljc"]
                               :figwheel true
-                              :compiler {;; :main figwheel4node-server.core
-                                         ;; :target :nodejs
-                                         :main "declarative-ddl.core"
+                              :compiler {:main "declarative-ddl.core"
                                          :output-to "target/js/repl/main.js"
-                                         :output-dir "target/js/repl/"
-                                         ;; :optimizations :none
-                                         ;;:source-map true
-                                         }}}}
+                                         :output-dir "target/js/repl/"}}}}
   :test-paths ["test/clj"])

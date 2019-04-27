@@ -7,7 +7,9 @@
             [java-time :as time]
             [conman.core :as conman]
             [clojure.java.jdbc :as jdbc]
-            [clojure.spec.alpha :as spec])
+            [clojure.spec.alpha :as spec]
+            [declarative-ddl.cljc.core :as dddl-cljc]
+            [declarative-ddl.cljc.utils.core :as cljc-utils])
   (:import [java.time ZoneId]))
 
 (defn edn-write [obj fpath]
@@ -114,17 +116,24 @@
    :type :field-addition
    :field (:value addition-diff)})
 
-(defn add-rem-xform [addition-diff]
-  (let [diff-path (:path addition-diff)]
+(defn add-rem-xform [individual-diff]
+  (let [;; _ (cljc-utils/log (str "individual-diff:\n" (cljc-utils/pp individual-diff)))
+        diff-path (:path individual-diff)]
    (cond
      (= 1 (count diff-path))
      {:change-type [:table-add-remove]
-      :table (:value addition-diff)}
+      :table (:value individual-diff)}
      (and (= 3 (count diff-path))
           (= :fields (get diff-path 1)))
      {:change-type [:field-add-remove]
       :table-name (first diff-path)
-      :field (:value addition-diff)}
+      :field (:value individual-diff)}
+     (and (= 4 (count diff-path))
+          (= :unique (get diff-path 3))
+          (:value individual-diff))
+     {:change-type [:constraint-add-unique]
+      :table-name (first diff-path)
+      :field-name (get diff-path 2)}
      :else
      (throw (Exception. "this case has not been implemented - make-addition-ddl - size of path")))))
 
@@ -138,15 +147,25 @@
     (let [add-rem-fields-sql (as-> (:changes add-rem) $
                                (map
                                 (fn [change]
-                                  (case (:change-type change)
-                                    [:field-add-remove :addition]
-                                    (str "ADD COLUMN "
-                                         (-> change :field :name undasherize) " "
-                                         (field-type-to-ddl (:field change)))
-                                    [:field-add-remove :removal]
-                                    (str "DROP COLUMN " (-> change :field :name undasherize))
-                                    :else
-                                    (throw (Exception. (str "not prepared to handle change type " (:change-type change))))))
+                                  (let [;; _ (cljc-utils/log (str "change:\n" (cljc-utils/pp change)))
+                                        ]
+                                   (case (:change-type change)
+                                     [:field-add-remove :addition]
+                                     (str "ADD COLUMN "
+                                          (-> change :field :name undasherize) " "
+                                          (field-type-to-ddl (:field change)))
+                                     [:field-add-remove :removal]
+                                     (str "DROP COLUMN " (-> change :field :name undasherize))
+                                     [:constraint-add-unique :addition]
+                                     (let [sql-field-name (-> change :field-name name undasherize)
+                                           constraint-name
+                                           (str
+                                            (-> change :table-name name undasherize)
+                                            "_" sql-field-name "_unique")]
+                                      (str "ADD CONSTRAINT " constraint-name
+                                           " UNIQUE (" sql-field-name ")"))
+                                     :else
+                                     (throw (Exception. (str "not prepared to handle change type " (:change-type change)))))))
                                 $)
                                (map #(str "    " %) $)
                                (interpose ",\n" $))
@@ -175,8 +194,8 @@
                     (fn [x]
                       (case (first (:change-type x))
                         :table-add-remove :none
-                        :field-add-remove
-                        [:alter-table (:table-name x)]))
+                        :field-add-remove [:alter-table (:table-name x)]
+                        :constraint-add-unique [:alter-table (:table-name x)]))
                     combined)
         ;; _ (clojure.pprint/pprint grouped-by)
         non-grouped (:none grouped-by)
@@ -208,35 +227,35 @@
       (interpose "\n" $)
       (apply str $))))
 
-;; regarding (dissoc :choices) - postgres can do a check constraint on the data in
-;; a character field, but for simplicity sake for now, I will ignore that feature
-;; and leave it to the user of auto-admin to make that restriction
-(defn xform-fields-for-diff [fields-vec]
-  (reduce
-   (fn [accum field]
-     (let [new-field (-> field (dissoc :choices))]
-       (assoc accum (keyword (:name field)) new-field)))
-   {}
-   fields-vec))
+;; ;; regarding (dissoc :choices) - postgres can do a check constraint on the data in
+;; ;; a character field, but for simplicity sake for now, I will ignore that feature
+;; ;; and leave it to the user of auto-admin to make that restriction
+;; (defn xform-fields-for-diff [fields-vec]
+;;   (reduce
+;;    (fn [accum field]
+;;      (let [new-field (-> field (dissoc :choices))]
+;;        (assoc accum (keyword (:name field)) new-field)))
+;;    {}
+;;    fields-vec))
 
-;; (spec/fdef xform-fields-to-pure-map
-;;            :args (spec/cat :field-vec (spec/coll-of :entities-schemas/field)))
+;; ;; (spec/fdef xform-fields-to-pure-map
+;; ;;            :args (spec/cat :field-vec (spec/coll-of :entities-schemas/field)))
 
 
 
-(defn xform-entities-for-diff [entities-vec]
-  (reduce
-   (fn [accum entity]
-     (let [new-entity (-> entity
-                          (assoc :fields (xform-fields-for-diff (:fields entity)))
-                          (dissoc :repr))]
-       (assoc accum (keyword (:name new-entity)) new-entity)))
-   {}
-   entities-vec))
+;; (defn xform-entities-for-diff [entities-vec]
+;;   (reduce
+;;    (fn [accum entity]
+;;      (let [new-entity (-> entity
+;;                           (assoc :fields (xform-fields-for-diff (:fields entity)))
+;;                           (dissoc :repr))]
+;;        (assoc accum (keyword (:name new-entity)) new-entity)))
+;;    {}
+;;    entities-vec))
 
 (defn make-migration [entities-old-diff-list entities-new]
   (let [entities-patched (reduce #(dal/patch %1 %2) nil entities-old-diff-list)
-        entities-for-diff (xform-entities-for-diff entities-new)]
+        entities-for-diff (dddl-cljc/xform-entities-for-diff entities-new)]
     (dal/diffl entities-patched entities-for-diff)))
 
 

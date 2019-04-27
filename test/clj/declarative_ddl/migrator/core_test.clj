@@ -5,7 +5,9 @@
             [clojure.spec.alpha :as spec]
             [diff-as-list.core :as dal]
             [clojure.string :as str]
-            [clojure.pprint :as pp]))
+            [clojure.pprint :as pp]
+            [declarative-ddl.cljc.core :as dddl-cljc]
+            [declarative-ddl.cljc.utils.core :as cljc-utils]))
 
 (deftest initial-migration-test
   (testing "initial migration"
@@ -89,6 +91,11 @@
                "    created_by_id INTEGER REFERENCES cledgers_user NOT NULL"
                ");"]))))))
 
+(defn xform-ents [ents]
+  (as-> ents $
+    (spec/assert ::entities-schemas/entities $)
+    (dddl-cljc/xform-entities-for-diff $)))
+
 (deftest alter-table-test
   (testing "alter table"
     (let [ents-before [{:name "test-add-remove-fields"
@@ -105,13 +112,14 @@
                       {:name "test-add-table"
                        :fields [{:name "new-table-field"
                                  :type :int}]}]
-          ents-before-xformed (as-> ents-before $
-                                (spec/assert ::entities-schemas/entities $)
-                                (xform-entities-for-diff $))
-          ents-after-xformed (as-> ents-after $
-                               (spec/assert ::entities-schemas/entities $)
-                               (xform-entities-for-diff $))
-          the-diff (dal/diffl ents-before-xformed ents-after-xformed)
+          ;; ents-before-xformed (as-> ents-before $
+          ;;                       (spec/assert ::entities-schemas/entities $)
+          ;;                       (dddl-cljc/xform-entities-for-diff $))
+          ;; ents-after-xformed (as-> ents-after $
+          ;;                      (spec/assert ::entities-schemas/entities $)
+          ;;                      (dddl-cljc/xform-entities-for-diff $))
+          ;; the-diff (dal/diffl ents-before-xformed ents-after-xformed)
+          the-diff (dal/diffl (xform-ents ents-before) (xform-ents ents-after))
           actual (diff-to-ddl the-diff)
           ;; _ (println (str
           ;;             "actual type = " (type actual) "\n"
@@ -128,5 +136,25 @@
                         (interpose "\n")
                         (apply str))
           ;; _ (pp/pprint actual)
+          ]
+      (is (= actual expected)))))
+
+(deftest alter-table-add-unique
+  (testing "alter table add unique"
+    (let [ents-before [{:name "test_table"
+                        :fields [{:name "should-be-unique"
+                                  :type :int}]}]
+          ents-after [{:name "test_table"
+                       :fields [{:name "should-be-unique"
+                                 :type :int
+                                 :unique true}]}]
+          the-diff (dal/diffl (xform-ents ents-before) (xform-ents ents-after))
+          ;; _ (println (str "the-diff:\n" (cljc-utils/pp the-diff)))
+          actual (diff-to-ddl the-diff)
+          ;; _ (println (str "actual:\n" (cljc-utils/pp actual)))
+          expected (->> ["ALTER TABLE test_table"
+                         "    ADD CONSTRAINT test_table_should_be_unique_unique UNIQUE (should_be_unique);"]
+                        (interpose "\n")
+                        (apply str))
           ]
       (is (= actual expected)))))
