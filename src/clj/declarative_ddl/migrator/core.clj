@@ -328,31 +328,32 @@
         (jdbc/with-db-transaction [t-conn db-conn]
           (let [last-mig-num (get-last-migration-number t-conn)
                 ;; _ (println "last-mig-num:" last-mig-num)
-                db-says-initial? (nil? last-mig-num)
-                files-say-initial?
-                (let [mig-num-from-last-file
-                      (get-migration-number-from-filename (last all-mig-file-names))
-                      ;; _ (println "mig-num-from-last-file: " mig-num-from-last-file)
-                      ]
-                  (= mig-num-from-last-file 1))
-                both-say-initial? (= db-says-initial? files-say-initial?)]
-            (if (not both-say-initial?)
-              (throw (Exception. (str "conflicting results on whether this is the initial migration or not. db-says-initial? = " db-says-initial? ", files-say-initial? = " files-say-initial?)))
-              (let [remaining-mig-file-names (if (nil? last-mig-num)
-                                               all-mig-file-names
-                                               (filter #(> (get-migration-number-from-filename %) last-mig-num) all-mig-file-names))
-                    _ (println "remaining-mig-file-names:" remaining-mig-file-names)
-                    init-result (when (nil? last-mig-num)
-                                  (jdbc/execute! t-conn [migration-table-ddl]))]
-                (doseq [remaining-mig-file-name remaining-mig-file-names]
-                  (let [mig-file-path (str migrations-dir-name "/" remaining-mig-file-name)
-                        mig-number (get-migration-number-from-filename remaining-mig-file-name)
-                        mig-diff (edn-read mig-file-path)
-                        the-ddl (diff-to-ddl mig-diff)
-                        _ (println (str "the-ddl:\n" the-ddl))]
-                    (if dry-run
-                      (println "dry run only; DDL not exectuted.")
-                      (let [ddl-exec-res (jdbc/execute! t-conn the-ddl)
-                            migrations-table-append-res (jdbc/insert! t-conn :migrations {:number mig-number})]))))))))
+                ;; db-says-initial? (nil? last-mig-num)
+                ;; files-say-initial?
+                ;; (let [mig-num-from-last-file
+                ;;       (get-migration-number-from-filename (last all-mig-file-names))
+                ;;       ;; _ (println "mig-num-from-last-file: " mig-num-from-last-file)
+                ;;       ]
+                ;;   (= mig-num-from-last-file 1))
+                ;; both-say-initial? (= db-says-initial? files-say-initial?)
+                ]
+            ;; if (not both-say-initial?)
+            ;; (throw (Exception. (str "conflicting results on whether this is the initial migration or not. db-says-initial? = " db-says-initial? ", files-say-initial? = " files-say-initial?)))
+            (let [remaining-mig-file-names (if (nil? last-mig-num)
+                                             all-mig-file-names
+                                             (filter #(> (get-migration-number-from-filename %) last-mig-num) all-mig-file-names))
+                  _ (println "remaining-mig-file-names:" remaining-mig-file-names)
+                  init-result (when (nil? last-mig-num)
+                                (jdbc/execute! t-conn [migration-table-ddl]))]
+              (doseq [remaining-mig-file-name remaining-mig-file-names]
+                (let [mig-file-path (str migrations-dir-name "/" remaining-mig-file-name)
+                      mig-number (get-migration-number-from-filename remaining-mig-file-name)
+                      mig-diff (edn-read mig-file-path)
+                      the-ddl (diff-to-ddl mig-diff)
+                      _ (println (str "the-ddl:\n" the-ddl))]
+                  (if dry-run
+                    (println "dry run only; DDL not exectuted.")
+                    (let [ddl-exec-res (jdbc/execute! t-conn the-ddl)
+                          migrations-table-append-res (jdbc/insert! t-conn :migrations {:number mig-number})])))))))
         (finally
           (conman/disconnect! db-conn))))))
