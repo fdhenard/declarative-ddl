@@ -158,3 +158,31 @@
                         (apply str))
           ]
       (is (= actual expected)))))
+
+
+(deftest alter-table-add-foreign-key
+  (let [ents-before [{:name "test-table"
+                      :fields [{:name "hi"
+                                :type :int}]}
+                     ]
+        ents-after [{:name "new-something"
+                     :fields [{:name "some-field"
+                               :type :int}]}
+                    {:name "test-table"
+                     :fields [{:name "hi"
+                               :type :int}
+                              {:name "new-something"
+                               :type :foreign-key
+                               :references :new-something}]}]
+        the-diff (dal/diffl (xform-ents ents-before) (xform-ents ents-after))
+        actual (diff-to-ddl the-diff)
+        expected (->> ["CREATE TABLE new_something ("
+                       "    id SERIAL PRIMARY KEY,"
+                       "    some_field INTEGER NOT NULL"
+                       ");"
+                       "ALTER TABLE test_table"
+                       "    ADD COLUMN new_something_id INTEGER REFERENCES new_something NOT NULL;"]
+                      (interpose "\n")
+                      (apply str))
+        #_ (clojure.pprint/pprint actual)]
+    (is (= actual expected))))

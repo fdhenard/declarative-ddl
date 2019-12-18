@@ -71,13 +71,16 @@
       (interpose " " $)
       (apply str $))))
 
+(defn get-field-name [field-in]
+  (-> (:name field-in)
+      (#(if (= (:type field-in) :foreign-key)
+          (str % "-id")
+          %))
+      undasherize))
+
 (defn create-table-field [field-in]
   (let [field-validated (spec/assert ::entities-schemas/field field-in)
-        field-name (-> (:name field-validated)
-                       (#(if (= (:type field-validated) :foreign-key)
-                           (str % "-id")
-                           %))
-                       undasherize)]
+        field-name (get-field-name field-validated)]
     (str field-name " " (field-type-to-ddl field-validated))))
 
 (defn create-table [table-in]
@@ -144,31 +147,35 @@
     [:table-add-remove :removal]
     (str "DROP TABLE " (-> add-rem :table :name undasherize) ";")
     [:alter-table]
-    (let [add-rem-fields-sql (as-> (:changes add-rem) $
-                               (map
-                                (fn [change]
-                                  (let [;; _ (cljc-utils/log (str "change:\n" (cljc-utils/pp change)))
-                                        ]
-                                   (case (:change-type change)
-                                     [:field-add-remove :addition]
-                                     (str "ADD COLUMN "
-                                          (-> change :field :name undasherize) " "
-                                          (field-type-to-ddl (:field change)))
-                                     [:field-add-remove :removal]
-                                     (str "DROP COLUMN " (-> change :field :name undasherize))
-                                     [:constraint-add-unique :addition]
-                                     (let [sql-field-name (-> change :field-name name undasherize)
-                                           constraint-name
-                                           (str
-                                            (-> change :table-name name undasherize)
-                                            "_" sql-field-name "_unique")]
-                                      (str "ADD CONSTRAINT " constraint-name
-                                           " UNIQUE (" sql-field-name ")"))
-                                     :else
-                                     (throw (Exception. (str "not prepared to handle change type " (:change-type change)))))))
-                                $)
-                               (map #(str "    " %) $)
-                               (interpose ",\n" $))
+    (let [add-rem-fields-sql
+          (as-> (:changes add-rem) $
+            (map
+             (fn [change]
+               (let [#_ (cljc-utils/log (str "change:\n" (cljc-utils/pp change)))]
+                 (case (:change-type change)
+                   [:field-add-remove :addition]
+                   (let [#_ (clojure.pprint/pprint change)
+                         field (:field change)
+                         sql-field-name (get-field-name field)]
+                     (str "ADD COLUMN "
+                          sql-field-name " "
+                          (field-type-to-ddl field)))
+                   [:field-add-remove :removal]
+                   (let [sql-field-name (get-field-name (:field change))]
+                     (str "DROP COLUMN " sql-field-name))
+                   [:constraint-add-unique :addition]
+                   (let [sql-field-name (-> change :field-name name undasherize)
+                         constraint-name
+                         (str
+                          (-> change :table-name name undasherize)
+                          "_" sql-field-name "_unique")]
+                     (str "ADD CONSTRAINT " constraint-name
+                          " UNIQUE (" sql-field-name ")"))
+                   :else
+                   (throw (Exception. (str "not prepared to handle change type " (:change-type change)))))))
+             $)
+            (map #(str "    " %) $)
+            (interpose ",\n" $))
           sql-vec (concat ["ALTER TABLE " (-> add-rem :table-name name undasherize) "\n"]
                           add-rem-fields-sql
                           ";")]
