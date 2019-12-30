@@ -110,10 +110,6 @@
     :else
     (throw (Exception. "this case has not yet been implemented - size of path"))))
 
-(defn alter-table-add-column [table-key field-in]
-  (let [sql-vec ["ADD COLUMN " (create-table-field field-in)]]
-    sql-vec))
-
 (defn add-rem-xform [individual-diff]
   (let [;; _ (cljc-utils/log (str "individual-diff:\n" (cljc-utils/pp individual-diff)))
         diff-path (:path individual-diff)]
