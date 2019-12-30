@@ -114,11 +114,6 @@
   (let [sql-vec ["ADD COLUMN " (create-table-field field-in)]]
     sql-vec))
 
-(defn field-addition [addition-diff]
-  {:table (first (:path addition-diff))
-   :type :field-addition
-   :field (:value addition-diff)})
-
 (defn add-rem-xform [individual-diff]
   (let [;; _ (cljc-utils/log (str "individual-diff:\n" (cljc-utils/pp individual-diff)))
         diff-path (:path individual-diff)]
