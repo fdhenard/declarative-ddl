@@ -110,7 +110,8 @@
     :else
     (throw (Exception. "this case has not yet been implemented - size of path"))))
 
-(defn add-rem-xform [individual-diff]
+
+#_(defn add-rem-xform [individual-diff]
   (let [;; _ (cljc-utils/log (str "individual-diff:\n" (cljc-utils/pp individual-diff)))
         diff-path (:path individual-diff)]
    (cond
@@ -131,7 +132,7 @@
      :else
      (throw (Exception. "this case has not been implemented - make-addition-ddl - size of path")))))
 
-(defn add-rem-to-ddl [add-rem]
+#_(defn add-rem-to-ddl [add-rem]
   (case (:change-type add-rem)
     [:table-add-remove :addition]
     (create-table (:table add-rem))
@@ -173,8 +174,223 @@
       (apply str sql-vec))
     (throw (Exception. (str "not yet able to handle change-type of " (:change-type add-rem))))))
 
+(defprotocol GetTableNameKeywordAble
+  (get-table-name-kw [this]))
+
+(defprotocol Groupable
+  (get-group [this]))
+
+(defprotocol PostgresDdlAddDropable
+  (get-pg-ddl-add [this])
+  (get-pg-ddl-drop [this]))
+
+(defprotocol PostgresDdlAble
+  (get-pg-ddl [this forward-or-backward]))
+
+(defprotocol GetTableDefinitionAble
+  (get-table-definition [this]))
+
+(defprotocol GetDdlTableNameAble
+  (get-ddl-table-name [this]))
+
+(defn get-pg-ddl-from-pg-add-dropable [change-rec forward-or-backward]
+  (if (not (satisfies? PostgresDdlAddDropable change-rec))
+    (throw (RuntimeException. "cannot get add or drop from non PostgresDdlAddDropable"))
+    (let [action-map
+          {[:forward :one] get-pg-ddl-add
+           [:forward :two] get-pg-ddl-drop
+           [:backward :one] get-pg-ddl-drop
+           [:backward :two] get-pg-ddl-add}
+          missing-in (-> change-rec :diff :missing-in)
+          action-fn (get action-map [forward-or-backward missing-in])]
+      (action-fn change-rec))))
+
+
+(defrecord TableAddRemove [diff]
+  Groupable
+  (get-group [this] :top-level)
+
+  GetTableDefinitionAble
+  (get-table-definition [this]
+    (-> this :diff :value))
+
+  GetDdlTableNameAble
+  (get-ddl-table-name [this]
+    (-> this get-table-definition :name undasherize))
+  
+  PostgresDdlAddDropable
+  (get-pg-ddl-add [this]
+    (create-table (get-table-definition this)))
+  (get-pg-ddl-drop [this]
+    (str "DROP TABLE " (get-ddl-table-name this) ";"))
+
+  PostgresDdlAble
+  (get-pg-ddl [this forward-or-backward]
+    (get-pg-ddl-from-pg-add-dropable this forward-or-backward)))
+
+(defprotocol DdlFieldNameable
+  (get-ddl-field-name [this]))
+
+(defprotocol GetFieldDefinitionAble
+  (get-field-def [this]))
+
+(defrecord FieldAddRemove [diff]
+  GetTableNameKeywordAble
+  (get-table-name-kw [this]
+    (-> this :diff :path first))
+  
+  Groupable
+  (get-group [this]
+    [:alter-table (get-table-name-kw this)])
+
+  GetFieldDefinitionAble
+  (get-field-def [this]
+    (-> this :diff :value))
+
+  DdlFieldNameable
+  (get-ddl-field-name [this]
+    (get-field-name (get-field-def this)))
+  
+  PostgresDdlAddDropable
+  (get-pg-ddl-add [this]
+    (str "ADD COLUMN "
+         (get-ddl-field-name this) " "
+         (field-type-to-ddl (get-field-def this))))
+  (get-pg-ddl-drop [this]
+    (str "DROP COLUMN " (get-ddl-field-name this)))
+
+  PostgresDdlAble
+  (get-pg-ddl [this forward-or-backward]
+    (get-pg-ddl-from-pg-add-dropable this forward-or-backward)))
+
+(defprotocol ConstraintNameable
+  (get-constraint-name [this]))
+
+(defrecord ConstraintUniqueAddRemove [diff]
+  GetTableNameKeywordAble
+  (get-table-name-kw [this]
+    (-> this :diff :path first))
+  
+  Groupable
+  (get-group [this]
+    [:alter-table (get-table-name-kw this)])
+
+  DdlFieldNameable
+  (get-ddl-field-name [this]
+    (-> this :diff :path (get 2) name undasherize))
+
+  ConstraintNameable
+  (get-constraint-name [this]
+    (let [ddl-table-name (-> this get-table-name-kw name undasherize)]
+      (str ddl-table-name "_" (get-ddl-field-name this) "_unique")))
+
+  PostgresDdlAddDropable
+  (get-pg-ddl-add [this]
+    (str "ADD CONSTRAINT " (get-constraint-name this)
+         " UNIQUE (" (get-ddl-field-name this) ")"))
+  (get-pg-ddl-drop [this]
+    (str "DROP CONSTRAINT " (get-constraint-name this)))
+
+  PostgresDdlAble
+  (get-pg-ddl [this forward-or-backward]
+    (get-pg-ddl-from-pg-add-dropable this forward-or-backward)))
+
+;; (defmulti make-change-record (fn [diff] (-> diff :path count)))
+;; (defmethod make-change-record 1 [diff]
+;;   (->TableAddRemove diff))
+;; (defmethod make-change-record 3 [diff]
+;;   (let [diff-path (:path diff)]
+;;     (when (not (= (get diff-path 1) :fields))
+;;       (throw (RuntimeException. (str "should have fields in diff. diff = " (with-out-str (pp/pprint diff))))))
+;;     (->FieldAddRemove diff)))
+;; (defmethod make-change-record 4 [diff]
+;;   (->ConstraintAddRemove diff))
+
+(defn make-change-record [diff]
+  (let [diff-path (:path diff)]
+   (cond
+     (= 1 (count diff-path))
+     (->TableAddRemove diff)
+     (and (= 3 (count diff-path))
+          (= :fields (get diff-path 1)))
+     (->FieldAddRemove diff)
+     (and (= 4 (count diff-path))
+          (= :unique (get diff-path 3))
+          (:value diff))
+     (->ConstraintUniqueAddRemove diff)
+     :else
+     (throw (Exception. "this case has not been implemented - make-addition-ddl - size of path")))))
+
+;; (defmulti get-change-type (fn [diff] (-> diff :path count)))
+;; (defmethod get-change-type 1 [_]
+;;   :table-add-remove)
+;; (defmethod get-change-type 3 [diff]
+;;   (let [diff-path (:path diff)]
+;;     (when (not (= diff-path :fields))
+;;       (throw (RuntimeException. "should have fields in diff")))
+;;     :field-add-remove))
+;; (defmethod get-change-type 4 [diff])
+
+;; (defprotocol PostgresDdlAlterable
+;;   (get-pg-alter [this]))
+
+(defrecord AlterTable [table-name-kw change-records]
+  GetDdlTableNameAble
+  (get-ddl-table-name [this]
+    (-> table-name-kw name undasherize))
+  
+  PostgresDdlAble
+  (get-pg-ddl [this forward-or-backward]
+    (let [field-ddls (->> change-records
+                          (map #(get-pg-ddl % forward-or-backward))
+                          (map #(str "    " %))
+                          (interpose ",\n"))
+          ddl-vec (concat ["ALTER TABLE " (get-ddl-table-name this) "\n"]
+                          field-ddls
+                          [";"])
+          result (apply str ddl-vec)]
+      result)))
+
+(defn make-grouped-change-record [[grouping change-records]]
+  (let [group-category (first grouping)]
+   (cond
+     (= group-category :alter-table)
+     (->AlterTable (second grouping) change-records)
+     :default
+     (throw (RuntimeException. (str "don't know how to make a change record for group category = " group-category))))))
+
+
 (defn add-rems-to-ddl [diff-in]
-  (let [xform-add-rems
+  (let [missing-in-1 (:keys-missing-in-1 diff-in)
+        missing-in-2 (:keys-missing-in-2 diff-in)
+        missing-in-1 (map #(assoc % :missing-in :one) missing-in-1)
+        missing-in-2 (map #(assoc % :missing-in :two) missing-in-2)
+        all-add-rems (concat missing-in-1 missing-in-2)
+        #_ (pp/pprint all-add-rems)
+        as-change-records (map #(make-change-record %) all-add-rems)
+        #_ (pp/pprint as-change-records)
+        grouped-by (group-by get-group as-change-records)
+        #_ (println "\ngrouped-by")
+        #_ (pp/pprint grouped-by)
+        top-level-changes (:top-level grouped-by)
+        top-level-ddl (map #(get-pg-ddl % :forward) top-level-changes)
+        #_ (println "\ntop level ddl")
+        #_ (pp/pprint top-level-ddl)
+        remaining-grouped (dissoc grouped-by :top-level)
+        grouped-change-records (map make-grouped-change-record remaining-grouped)
+        #_ (println "\ngrouped-change-records:")
+        #_ (pp/pprint grouped-change-records)
+
+        grouped-change-ddls (map #(get-pg-ddl % :forward) grouped-change-records)
+        #_ (println "\ngrouped-change-ddls:")
+        #_ (pp/pprint grouped-change-ddls)
+        ]
+    (concat top-level-ddl grouped-change-ddls)))
+
+
+#_(defn add-rems-to-ddl-old [diff-in]
+  (let [_ (clojure.pprint/pprint diff-in)
+        xform-add-rems
         (fn [keys-missing-diffs addition-or-removal]
           (as-> keys-missing-diffs $
             (map add-rem-xform $)
@@ -217,39 +433,12 @@
     the-ddl))
 
 (defn diff-to-ddl [diff-in]
-  (let [;; _ (println "diff-in:" diff-in)
-        val-diff-ddl (map value-difference-to-ddl (:value-differences diff-in))
+  (let [val-diff-ddl (map value-difference-to-ddl (:value-differences diff-in))
         diffs-xformed (add-rems-to-ddl diff-in)
         result-ddl-seq (concat val-diff-ddl diffs-xformed)]
     (as-> result-ddl-seq $
       (interpose "\n" $)
       (apply str $))))
-
-;; ;; regarding (dissoc :choices) - postgres can do a check constraint on the data in
-;; ;; a character field, but for simplicity sake for now, I will ignore that feature
-;; ;; and leave it to the user of auto-admin to make that restriction
-;; (defn xform-fields-for-diff [fields-vec]
-;;   (reduce
-;;    (fn [accum field]
-;;      (let [new-field (-> field (dissoc :choices))]
-;;        (assoc accum (keyword (:name field)) new-field)))
-;;    {}
-;;    fields-vec))
-
-;; ;; (spec/fdef xform-fields-to-pure-map
-;; ;;            :args (spec/cat :field-vec (spec/coll-of :entities-schemas/field)))
-
-
-
-;; (defn xform-entities-for-diff [entities-vec]
-;;   (reduce
-;;    (fn [accum entity]
-;;      (let [new-entity (-> entity
-;;                           (assoc :fields (xform-fields-for-diff (:fields entity)))
-;;                           (dissoc :repr))]
-;;        (assoc accum (keyword (:name new-entity)) new-entity)))
-;;    {}
-;;    entities-vec))
 
 (defn make-migration [entities-old-diff-list entities-new]
   (let [entities-patched (reduce #(dal/patch %1 %2) nil entities-old-diff-list)
