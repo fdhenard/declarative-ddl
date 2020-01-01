@@ -265,11 +265,12 @@
 
 (defn make-grouped-change-record [[grouping change-records]]
   (let [group-category (first grouping)]
-   (cond
-     (= group-category :alter-table)
-     (->AlterTable (second grouping) change-records)
-     :default
-     (throw (RuntimeException. (str "don't know how to make a change record for group category = " group-category))))))
+    (case group-category
+      :alter-table (->AlterTable (second grouping) change-records)
+      (throw (RuntimeException.
+              (str
+               "don't know how to make a change record for group category = "
+               group-category))))))
 
 
 (defn add-rems-to-ddl [diff-in]
