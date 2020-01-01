@@ -199,8 +199,8 @@
   (get-pg-ddl [this forward-or-backward]
     (get-pg-ddl-from-pg-add-dropable this forward-or-backward)))
 
-(defprotocol ConstraintNameable
-  (get-constraint-name [this]))
+(defprotocol ConstraintDdlNameable
+  (get-ddl-constraint-name [this]))
 
 (defrecord ConstraintUniqueAddRemove [diff]
   GetTableNameKeywordAble
@@ -215,17 +215,17 @@
   (get-ddl-field-name [this]
     (-> this :diff :path (get 2) name undasherize))
 
-  ConstraintNameable
-  (get-constraint-name [this]
+  ConstraintDdlNameable
+  (get-ddl-constraint-name [this]
     (let [ddl-table-name (-> this get-table-name-kw name undasherize)]
       (str ddl-table-name "_" (get-ddl-field-name this) "_unique")))
 
   PostgresDdlAddDropable
   (get-pg-ddl-add [this]
-    (str "ADD CONSTRAINT " (get-constraint-name this)
+    (str "ADD CONSTRAINT " (get-ddl-constraint-name this)
          " UNIQUE (" (get-ddl-field-name this) ")"))
   (get-pg-ddl-drop [this]
-    (str "DROP CONSTRAINT " (get-constraint-name this)))
+    (str "DROP CONSTRAINT " (get-ddl-constraint-name this)))
 
   PostgresDdlAble
   (get-pg-ddl [this forward-or-backward]
