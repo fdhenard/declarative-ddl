@@ -111,69 +111,6 @@
     (throw (Exception. "this case has not yet been implemented - size of path"))))
 
 
-#_(defn add-rem-xform [individual-diff]
-  (let [;; _ (cljc-utils/log (str "individual-diff:\n" (cljc-utils/pp individual-diff)))
-        diff-path (:path individual-diff)]
-   (cond
-     (= 1 (count diff-path))
-     {:change-type [:table-add-remove]
-      :table (:value individual-diff)}
-     (and (= 3 (count diff-path))
-          (= :fields (get diff-path 1)))
-     {:change-type [:field-add-remove]
-      :table-name (first diff-path)
-      :field (:value individual-diff)}
-     (and (= 4 (count diff-path))
-          (= :unique (get diff-path 3))
-          (:value individual-diff))
-     {:change-type [:constraint-add-unique]
-      :table-name (first diff-path)
-      :field-name (get diff-path 2)}
-     :else
-     (throw (Exception. "this case has not been implemented - make-addition-ddl - size of path")))))
-
-#_(defn add-rem-to-ddl [add-rem]
-  (case (:change-type add-rem)
-    [:table-add-remove :addition]
-    (create-table (:table add-rem))
-    [:table-add-remove :removal]
-    (str "DROP TABLE " (-> add-rem :table :name undasherize) ";")
-    [:alter-table]
-    (let [add-rem-fields-sql
-          (as-> (:changes add-rem) $
-            (map
-             (fn [change]
-               (let [#_ (cljc-utils/log (str "change:\n" (cljc-utils/pp change)))]
-                 (case (:change-type change)
-                   [:field-add-remove :addition]
-                   (let [#_ (clojure.pprint/pprint change)
-                         field (:field change)
-                         sql-field-name (get-field-name field)]
-                     (str "ADD COLUMN "
-                          sql-field-name " "
-                          (field-type-to-ddl field)))
-                   [:field-add-remove :removal]
-                   (let [sql-field-name (get-field-name (:field change))]
-                     (str "DROP COLUMN " sql-field-name))
-                   [:constraint-add-unique :addition]
-                   (let [sql-field-name (-> change :field-name name undasherize)
-                         constraint-name
-                         (str
-                          (-> change :table-name name undasherize)
-                          "_" sql-field-name "_unique")]
-                     (str "ADD CONSTRAINT " constraint-name
-                          " UNIQUE (" sql-field-name ")"))
-                   :else
-                   (throw (Exception. (str "not prepared to handle change type " (:change-type change)))))))
-             $)
-            (map #(str "    " %) $)
-            (interpose ",\n" $))
-          sql-vec (concat ["ALTER TABLE " (-> add-rem :table-name name undasherize) "\n"]
-                          add-rem-fields-sql
-                          ";")]
-      (apply str sql-vec))
-    (throw (Exception. (str "not yet able to handle change-type of " (:change-type add-rem))))))
-
 (defprotocol GetTableNameKeywordAble
   (get-table-name-kw [this]))
 
@@ -295,17 +232,6 @@
   (get-pg-ddl [this forward-or-backward]
     (get-pg-ddl-from-pg-add-dropable this forward-or-backward)))
 
-;; (defmulti make-change-record (fn [diff] (-> diff :path count)))
-;; (defmethod make-change-record 1 [diff]
-;;   (->TableAddRemove diff))
-;; (defmethod make-change-record 3 [diff]
-;;   (let [diff-path (:path diff)]
-;;     (when (not (= (get diff-path 1) :fields))
-;;       (throw (RuntimeException. (str "should have fields in diff. diff = " (with-out-str (pp/pprint diff))))))
-;;     (->FieldAddRemove diff)))
-;; (defmethod make-change-record 4 [diff]
-;;   (->ConstraintAddRemove diff))
-
 (defn make-change-record [diff]
   (let [diff-path (:path diff)]
    (cond
@@ -320,19 +246,6 @@
      (->ConstraintUniqueAddRemove diff)
      :else
      (throw (Exception. "this case has not been implemented - make-addition-ddl - size of path")))))
-
-;; (defmulti get-change-type (fn [diff] (-> diff :path count)))
-;; (defmethod get-change-type 1 [_]
-;;   :table-add-remove)
-;; (defmethod get-change-type 3 [diff]
-;;   (let [diff-path (:path diff)]
-;;     (when (not (= diff-path :fields))
-;;       (throw (RuntimeException. "should have fields in diff")))
-;;     :field-add-remove))
-;; (defmethod get-change-type 4 [diff])
-
-;; (defprotocol PostgresDdlAlterable
-;;   (get-pg-alter [this]))
 
 (defrecord AlterTable [table-name-kw change-records]
   GetDdlTableNameAble
@@ -366,71 +279,15 @@
         missing-in-1 (map #(assoc % :missing-in :one) missing-in-1)
         missing-in-2 (map #(assoc % :missing-in :two) missing-in-2)
         all-add-rems (concat missing-in-1 missing-in-2)
-        #_ (pp/pprint all-add-rems)
         as-change-records (map #(make-change-record %) all-add-rems)
-        #_ (pp/pprint as-change-records)
         grouped-by (group-by get-group as-change-records)
-        #_ (println "\ngrouped-by")
-        #_ (pp/pprint grouped-by)
         top-level-changes (:top-level grouped-by)
         top-level-ddl (map #(get-pg-ddl % :forward) top-level-changes)
-        #_ (println "\ntop level ddl")
-        #_ (pp/pprint top-level-ddl)
         remaining-grouped (dissoc grouped-by :top-level)
         grouped-change-records (map make-grouped-change-record remaining-grouped)
-        #_ (println "\ngrouped-change-records:")
-        #_ (pp/pprint grouped-change-records)
-
-        grouped-change-ddls (map #(get-pg-ddl % :forward) grouped-change-records)
-        #_ (println "\ngrouped-change-ddls:")
-        #_ (pp/pprint grouped-change-ddls)
-        ]
+        grouped-change-ddls (map #(get-pg-ddl % :forward) grouped-change-records)]
     (concat top-level-ddl grouped-change-ddls)))
 
-
-#_(defn add-rems-to-ddl-old [diff-in]
-  (let [_ (clojure.pprint/pprint diff-in)
-        xform-add-rems
-        (fn [keys-missing-diffs addition-or-removal]
-          (as-> keys-missing-diffs $
-            (map add-rem-xform $)
-            (map
-             (fn [_diff]
-               (as-> _diff $$
-                 (let [new-key (conj (:change-type _diff) addition-or-removal)]
-                   (assoc $$ :change-type new-key))))
-             $)))
-        additions-xformed (xform-add-rems (:keys-missing-in-1 diff-in) :addition)
-        removals-xformed (xform-add-rems (:keys-missing-in-2 diff-in) :removal)
-        combined (concat additions-xformed removals-xformed)
-        ;; _ (clojure.pprint/pprint combined)
-        grouped-by (group-by
-                    (fn [x]
-                      (case (first (:change-type x))
-                        :table-add-remove :none
-                        :field-add-remove [:alter-table (:table-name x)]
-                        :constraint-add-unique [:alter-table (:table-name x)]))
-                    combined)
-        ;; _ (clojure.pprint/pprint grouped-by)
-        non-grouped (:none grouped-by)
-        remaining-grouped (dissoc grouped-by :none)
-        ;; _ (clojure.pprint/pprint remaining-grouped)
-        remaining-changes (map
-                           (fn [[k v]]
-                             (cond
-                               (= :alter-table (first k))
-                               {:change-type [:alter-table]
-                                :table-name (get k 1)
-                                :changes v}
-                               :else
-                               (throw (Exception. "not prepared to handle case"))))
-                           remaining-grouped)
-        ready-for-ddl (concat non-grouped remaining-changes)
-        ;; _ (clojure.pprint/pprint ready-for-ddl)
-        the-ddl (map add-rem-to-ddl ready-for-ddl)
-        ;; _ (println the-ddl)
-        ]
-    the-ddl))
 
 (defn diff-to-ddl [diff-in]
   (let [val-diff-ddl (map value-difference-to-ddl (:value-differences diff-in))
