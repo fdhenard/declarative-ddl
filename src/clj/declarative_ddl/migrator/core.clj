@@ -1,15 +1,14 @@
 (ns declarative-ddl.migrator.core
-  (:require [diff-as-list.core :as dal]
-            [clojure.pprint :as pp]
+  (:require [clojure.pprint :as pp]
             [clojure.string :as string]
-            [declarative-ddl.entities-schemas :as entities-schemas]
+            [clojure.java.jdbc :as jdbc]
             [clojure.spec.alpha :as spec]
             [java-time :as time]
             [conman.core :as conman]
-            [clojure.java.jdbc :as jdbc]
-            [clojure.spec.alpha :as spec]
+            [diff-as-list.core :as dal]
             [declarative-ddl.cljc.core :as dddl-cljc]
-            [declarative-ddl.cljc.utils.core :as cljc-utils])
+            [declarative-ddl.cljc.utils.core :as cljc-utils]
+            [declarative-ddl.entities-schemas :as entities-schemas])
   (:import [java.time ZoneId]))
 
 (defn edn-write [obj fpath]
