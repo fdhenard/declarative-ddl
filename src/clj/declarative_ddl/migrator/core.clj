@@ -1,14 +1,17 @@
 (ns declarative-ddl.migrator.core
   (:require [clojure.pprint :as pp]
-            [clojure.string :as string]
             [clojure.java.jdbc :as jdbc]
             [clojure.spec.alpha :as spec]
             [java-time :as time]
             [conman.core :as conman]
             [diff-as-list.core :as dal]
             [declarative-ddl.cljc.core :as dddl-cljc]
+            [declarative-ddl.entities.core :as entities]
+            [declarative-ddl.clj-utils.core :as clj-utils]
             [declarative-ddl.cljc.utils.core :as cljc-utils]
-            [declarative-ddl.entities-schemas :as entities-schemas])
+            [declarative-ddl.migrator.change-record.postgres :as postgres]
+            [declarative-ddl.migrator.change-record.core :as change-record]
+            [declarative-ddl.migrator.change-record.factories :as change-rec-factories])
   (:import [java.time ZoneId]))
 
 (defn edn-write [obj fpath]
@@ -29,79 +32,14 @@
     (map #(.getName %) $)
     (sort $)))
 
-(defn- undasherize [s]
-  (string/replace s "-" "_"))
-
-(defn remove-key-from-kv-pair [[_ v]]
-  v)
-
-(defn field-type-to-ddl [field-in]
-  (let [type-specific-ddl (case (:type field-in)
-                            :character
-                            (str "VARCHAR(" (:max-length field-in) ")")
-                            :foreign-key
-                            (str "INTEGER REFERENCES " (-> (:references field-in) name undasherize))
-                            :boolean
-                            "BOOLEAN"
-                            :date-time
-                            "TIMESTAMP WITH TIME ZONE"
-                            :numeric
-                            (str "NUMERIC(" (:total-length field-in) ", " (:decimal-places field-in) ")")
-                            :date
-                            "DATE"
-                            :int
-                            "INTEGER"
-                            )
-        unique-ddl (when (and (contains? field-in :unique)
-                            (:unique field-in))
-                     "UNIQUE")
-        null-ddl (if (and (contains? field-in :null)
-                          (:null field-in))
-                   "NULL"
-                   "NOT NULL")
-        default-ddl (when (contains? field-in :default)
-                      (let [default-val-initial (:default field-in)
-                            default-val (case default-val-initial
-                                          :current-time "CURRENT_TIMESTAMP"
-                                          default-val-initial)]
-                        (str "DEFAULT(" default-val ")")))
-        combined-ddl (remove nil? [type-specific-ddl unique-ddl null-ddl default-ddl])]
-    (as-> combined-ddl $
-      (interpose " " $)
-      (apply str $))))
-
-(defn get-field-name [field-in]
-  (-> (:name field-in)
-      (#(if (= (:type field-in) :foreign-key)
-          (str % "-id")
-          %))
-      undasherize))
-
-(defn create-table-field [field-in]
-  (let [field-validated (spec/assert ::entities-schemas/field field-in)
-        field-name (get-field-name field-validated)]
-    (str field-name " " (field-type-to-ddl field-validated))))
-
-(defn create-table [table-in]
-  (let [fields-sql (as-> (:fields table-in) $
-                    (map remove-key-from-kv-pair $)
-                    (map #(str "    " (create-table-field %)) $)
-                    (interpose ",\n" $))
-
-        sql-vec (concat ["CREATE TABLE " (undasherize (:name table-in)) " (\n"]
-                        ["    id SERIAL PRIMARY KEY,\n"]
-                        fields-sql
-                        ["\n);"])]
-      (apply str sql-vec)))
-
 (defn value-difference-to-ddl [val-diff]
   (cond
     (empty? (:path val-diff))
     (cond
       (nil? (:val-1 val-diff))
       (as-> (:val-2 val-diff) $
-        (map remove-key-from-kv-pair $)
-        (map create-table $)
+        (map clj-utils/remove-key-from-kv-pair $)
+        (map postgres/create-table $)
         (interpose "\n" $)
         (apply str $))
       :else
@@ -109,183 +47,25 @@
     :else
     (throw (Exception. "this case has not yet been implemented - size of path"))))
 
-
-(defprotocol GetTableNameKeywordAble
-  (get-table-name-kw [this]))
-
-(defprotocol Groupable
-  (get-group [this]))
-
-(defprotocol PostgresDdlAddDropable
-  (get-pg-ddl-add [this])
-  (get-pg-ddl-drop [this]))
-
-(defprotocol PostgresDdlAble
-  (get-pg-ddl [this forward-or-backward]))
-
-(defprotocol GetTableDefinitionAble
-  (get-table-definition [this]))
-
-(defprotocol GetDdlTableNameAble
-  (get-ddl-table-name [this]))
-
-(defn get-pg-ddl-from-pg-add-dropable [change-rec forward-or-backward]
-  (if (not (satisfies? PostgresDdlAddDropable change-rec))
-    (throw (RuntimeException. "cannot get add or drop from non PostgresDdlAddDropable"))
-    (let [action-map
-          {[:forward :one] get-pg-ddl-add
-           [:forward :two] get-pg-ddl-drop
-           [:backward :one] get-pg-ddl-drop
-           [:backward :two] get-pg-ddl-add}
-          missing-in (-> change-rec :diff :missing-in)
-          action-fn (get action-map [forward-or-backward missing-in])]
-      (action-fn change-rec))))
-
-
-(defrecord TableAddRemove [diff]
-  Groupable
-  (get-group [this] :top-level)
-
-  GetTableDefinitionAble
-  (get-table-definition [this]
-    (-> this :diff :value))
-
-  GetDdlTableNameAble
-  (get-ddl-table-name [this]
-    (-> this get-table-definition :name undasherize))
-  
-  PostgresDdlAddDropable
-  (get-pg-ddl-add [this]
-    (create-table (get-table-definition this)))
-  (get-pg-ddl-drop [this]
-    (str "DROP TABLE " (get-ddl-table-name this) ";"))
-
-  PostgresDdlAble
-  (get-pg-ddl [this forward-or-backward]
-    (get-pg-ddl-from-pg-add-dropable this forward-or-backward)))
-
-(defprotocol DdlFieldNameable
-  (get-ddl-field-name [this]))
-
-(defprotocol GetFieldDefinitionAble
-  (get-field-def [this]))
-
-(defrecord FieldAddRemove [diff]
-  GetTableNameKeywordAble
-  (get-table-name-kw [this]
-    (-> this :diff :path first))
-  
-  Groupable
-  (get-group [this]
-    [:alter-table (get-table-name-kw this)])
-
-  GetFieldDefinitionAble
-  (get-field-def [this]
-    (-> this :diff :value))
-
-  DdlFieldNameable
-  (get-ddl-field-name [this]
-    (get-field-name (get-field-def this)))
-  
-  PostgresDdlAddDropable
-  (get-pg-ddl-add [this]
-    (str "ADD COLUMN "
-         (get-ddl-field-name this) " "
-         (field-type-to-ddl (get-field-def this))))
-  (get-pg-ddl-drop [this]
-    (str "DROP COLUMN " (get-ddl-field-name this)))
-
-  PostgresDdlAble
-  (get-pg-ddl [this forward-or-backward]
-    (get-pg-ddl-from-pg-add-dropable this forward-or-backward)))
-
-(defprotocol ConstraintDdlNameable
-  (get-ddl-constraint-name [this]))
-
-(defrecord ConstraintUniqueAddRemove [diff]
-  GetTableNameKeywordAble
-  (get-table-name-kw [this]
-    (-> this :diff :path first))
-  
-  Groupable
-  (get-group [this]
-    [:alter-table (get-table-name-kw this)])
-
-  DdlFieldNameable
-  (get-ddl-field-name [this]
-    (-> this :diff :path (get 2) name undasherize))
-
-  ConstraintDdlNameable
-  (get-ddl-constraint-name [this]
-    (let [ddl-table-name (-> this get-table-name-kw name undasherize)]
-      (str ddl-table-name "_" (get-ddl-field-name this) "_unique")))
-
-  PostgresDdlAddDropable
-  (get-pg-ddl-add [this]
-    (str "ADD CONSTRAINT " (get-ddl-constraint-name this)
-         " UNIQUE (" (get-ddl-field-name this) ")"))
-  (get-pg-ddl-drop [this]
-    (str "DROP CONSTRAINT " (get-ddl-constraint-name this)))
-
-  PostgresDdlAble
-  (get-pg-ddl [this forward-or-backward]
-    (get-pg-ddl-from-pg-add-dropable this forward-or-backward)))
-
-(defn make-change-record [diff]
-  (let [diff-path (:path diff)]
-   (cond
-     (= 1 (count diff-path))
-     (->TableAddRemove diff)
-     (and (= 3 (count diff-path))
-          (= :fields (get diff-path 1)))
-     (->FieldAddRemove diff)
-     (and (= 4 (count diff-path))
-          (= :unique (get diff-path 3))
-          (:value diff))
-     (->ConstraintUniqueAddRemove diff)
-     :else
-     (throw (Exception. "this case has not been implemented - make-addition-ddl - size of path")))))
-
-(defrecord AlterTable [table-name-kw change-records]
-  GetDdlTableNameAble
-  (get-ddl-table-name [this]
-    (-> table-name-kw name undasherize))
-  
-  PostgresDdlAble
-  (get-pg-ddl [this forward-or-backward]
-    (let [field-ddls (->> change-records
-                          (map #(get-pg-ddl % forward-or-backward))
-                          (map #(str "    " %))
-                          (interpose ",\n"))
-          ddl-vec (concat ["ALTER TABLE " (get-ddl-table-name this) "\n"]
-                          field-ddls
-                          [";"])
-          result (apply str ddl-vec)]
-      result)))
-
-(defn make-grouped-change-record [[grouping change-records]]
-  (let [group-category (first grouping)]
-    (case group-category
-      :alter-table (->AlterTable (second grouping) change-records)
-      (throw (RuntimeException.
-              (str
-               "don't know how to make a change record for group category = "
-               group-category))))))
-
-
 (defn add-rems-to-ddl [diff-in]
   (let [missing-in-1 (:keys-missing-in-1 diff-in)
         missing-in-2 (:keys-missing-in-2 diff-in)
         missing-in-1 (map #(assoc % :missing-in :one) missing-in-1)
         missing-in-2 (map #(assoc % :missing-in :two) missing-in-2)
         all-add-rems (concat missing-in-1 missing-in-2)
-        as-change-records (map #(make-change-record %) all-add-rems)
-        grouped-by (group-by get-group as-change-records)
+        as-change-records (map
+                           #(change-rec-factories/make-change-record % :postgres)
+                           all-add-rems)
+        grouped-by (group-by change-record/get-group as-change-records)
         top-level-changes (:top-level grouped-by)
-        top-level-ddl (map #(get-pg-ddl % :forward) top-level-changes)
+        top-level-ddl (map #(change-record/get-ddl-from-change-rec % :forward) top-level-changes)
         remaining-grouped (dissoc grouped-by :top-level)
-        grouped-change-records (map make-grouped-change-record remaining-grouped)
-        grouped-change-ddls (map #(get-pg-ddl % :forward) grouped-change-records)]
+        grouped-change-records (map
+                                #(change-rec-factories/make-grouped-change-record
+                                  %
+                                  :postgres)
+                                remaining-grouped)
+        grouped-change-ddls (map #(change-record/get-ddl % :forward) grouped-change-records)]
     (concat top-level-ddl grouped-change-ddls)))
 
 
@@ -313,7 +93,7 @@
 (spec/check-asserts true)
 
 (defn make-migration-file! [entities-in]
-  (let [entities-validated (spec/assert ::entities-schemas/entities entities-in)
+  (let [entities-validated (spec/assert ::entities/entities entities-in)
         ensure-mig-dir-exists-res
         (when-not (.exists migrations-dir)
           (.mkdir migrations-dir)

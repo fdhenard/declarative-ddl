@@ -1,12 +1,12 @@
 (ns declarative-ddl.migrator.core-test
-  (:require [clojure.test :refer :all]
-            [declarative-ddl.migrator.core :refer :all]
-            [declarative-ddl.entities-schemas :as entities-schemas]
+  (:require [clojure.pprint :as pp]
+            [clojure.string :as str]
+            [clojure.test :refer :all]
             [clojure.spec.alpha :as spec]
             [diff-as-list.core :as dal]
-            [clojure.string :as str]
-            [clojure.pprint :as pp]
             [declarative-ddl.cljc.core :as dddl-cljc]
+            [declarative-ddl.migrator.core :refer :all]
+            [declarative-ddl.entities.core :as entities]
             [declarative-ddl.cljc.utils.core :as cljc-utils]))
 
 (deftest initial-migration-test
@@ -93,7 +93,7 @@
 
 (defn xform-ents [ents]
   (as-> ents $
-    (spec/assert ::entities-schemas/entities $)
+    (spec/assert ::entities/entities $)
     (dddl-cljc/xform-entities-for-diff $)))
 
 (deftest alter-table-test
@@ -184,5 +184,8 @@
                        "    ADD COLUMN new_something_id INTEGER REFERENCES new_something NOT NULL;"]
                       (interpose "\n")
                       (apply str))
+        #_ (println "\nexpected:")
+        #_ (clojure.pprint/pprint expected)
+        #_ (println "\nactual:")
         #_ (clojure.pprint/pprint actual)]
     (is (= actual expected))))
