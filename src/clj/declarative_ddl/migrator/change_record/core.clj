@@ -56,7 +56,7 @@
 
 
 (defmulti get-ddl-from-change-rec (fn [ddl-genable _]
-                    (class ddl-genable)))
+                                    (class ddl-genable)))
 (defmethod get-ddl-from-change-rec ::DdlAddDropGenable [dadg forward-or-backward]
   (let [action-map
         {[:forward :one] get-ddl-add
@@ -64,8 +64,11 @@
          [:backward :one] get-ddl-drop
          [:backward :two] get-ddl-add}
         missing-in (-> dadg :diff :missing-in)
-        action-fn (get action-map [forward-or-backward missing-in])]
+        action-fn (get action-map [forward-or-backward missing-in])
+        _ (when (nil? action-fn)
+            (throw (RuntimeException. (str "can't find ddl-add-drop functionj from forward-or-backward = " forward-or-backward ", and missing-in = " missing-in))))]
     (action-fn dadg)))
+
 (defmethod get-ddl-from-change-rec ::OtherDdlGenable [odg forward-or-backward]
   (get-ddl odg forward-or-backward))
 
