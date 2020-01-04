@@ -65,7 +65,7 @@
                                   %
                                   :postgres)
                                 remaining-grouped)
-        grouped-change-ddls (map #(change-record/get-ddl % :forward) grouped-change-records)]
+        grouped-change-ddls (map #(change-record/get-ddl-from-change-rec % :forward) grouped-change-records)]
     (concat top-level-ddl grouped-change-ddls)))
 
 
