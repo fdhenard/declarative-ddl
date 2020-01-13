@@ -116,7 +116,7 @@
 
 (defmulti get-unique-constraint-ddl-name class)
 (defmethod get-unique-constraint-ddl-name ::UniqueConstraintAddDrop [ucad]
-  (let [ddl-table-name (-> ucad get-table-name-kw name csk/->snake_case)]
+  (let [ddl-table-name (-> ucad get-table-name-kw table-name-kw->ddl)]
     (str ddl-table-name "_" (get-field-ddl-name ucad) "_unique")))
 
 (derive ::AlterTable ::OtherDdlGenable)
