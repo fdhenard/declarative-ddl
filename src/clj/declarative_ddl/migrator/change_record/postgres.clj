@@ -1,5 +1,6 @@
 (ns declarative-ddl.migrator.change-record.postgres
   (:require [clojure.spec.alpha :as spec]
+            [camel-snake-kebab.core :as csk]
             [declarative-ddl.entities.core :as entities]
             [declarative-ddl.clj-utils.core :as clj-utils]
             [declarative-ddl.migrator.change-record.core :as change-record]))
@@ -11,7 +12,7 @@
                             :character
                             (str "VARCHAR(" (:max-length field-in) ")")
                             :foreign-key
-                            (str "INTEGER REFERENCES " (-> (:references field-in) name clj-utils/undasherize))
+                            (str "INTEGER REFERENCES " (-> (:references field-in) name csk/->snake_case))
                             :boolean
                             "BOOLEAN"
                             :date-time
@@ -53,8 +54,7 @@
                     (map #(str "    " (create-table-field %)) $)
                     (interpose ",\n" $))
 
-        sql-vec (concat ["CREATE TABLE " (clj-utils/undasherize
-                                          (:name table-in))
+        sql-vec (concat ["CREATE TABLE " (-> table-in :name csk/->snake_case)
                          " (\n"]
                         ["    id SERIAL PRIMARY KEY,\n"]
                         fields-sql

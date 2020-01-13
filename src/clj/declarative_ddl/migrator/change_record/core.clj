@@ -1,5 +1,6 @@
 (ns declarative-ddl.migrator.change-record.core
   (:require [clojure.spec.alpha :as spec]
+            [camel-snake-kebab.core :as csk]
             [declarative-ddl.entities.core :as entities]
             [declarative-ddl.clj-utils.core :as clj-utils]))
 
@@ -81,11 +82,11 @@
 
 
 (defn table-name-kw->ddl [kw-in]
-  (-> kw-in name clj-utils/undasherize))
+  (-> kw-in name csk/->snake_case))
 
 (defmulti get-table-ddl-name class)
 (defmethod get-table-ddl-name ::TableAddDrop [tad]
-  (-> tad get-table-definition :name clj-utils/undasherize))
+  (-> tad get-table-definition :name csk/->snake_case))
 
 (defmulti get-group class)
 (defmethod get-group ::TableAddDrop [tad]
@@ -110,12 +111,12 @@
 (defmethod get-field-ddl-name ::FieldAddDrop [fad]
   (-> fad get-field-definition entities/get-field-ddl-name))
 (defmethod get-field-ddl-name ::UniqueConstraintAddDrop [ucad]
-  (-> ucad :diff :path (get 2) name clj-utils/undasherize))
+  (-> ucad :diff :path (get 2) name csk/->snake_case))
 
 
 (defmulti get-unique-constraint-ddl-name class)
 (defmethod get-unique-constraint-ddl-name ::UniqueConstraintAddDrop [ucad]
-  (let [ddl-table-name (-> ucad get-table-name-kw name clj-utils/undasherize)]
+  (let [ddl-table-name (-> ucad get-table-name-kw name csk/->snake_case)]
     (str ddl-table-name "_" (get-field-ddl-name ucad) "_unique")))
 
 (derive ::AlterTable ::OtherDdlGenable)

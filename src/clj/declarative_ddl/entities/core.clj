@@ -1,6 +1,6 @@
 (ns declarative-ddl.entities.core
   (:require [clojure.spec.alpha :as spec]
-            [declarative-ddl.clj-utils.core :as clj-utils]))
+            [camel-snake-kebab.core :as csk]))
 
 
 
@@ -55,9 +55,9 @@
 
 (defmulti get-field-ddl-name #(:type %))
 (defmethod get-field-ddl-name :foreign-key [field-definition]
-  (-> field-definition :name (str "-id") clj-utils/undasherize))
+  (-> field-definition :name (str "-id") csk/->snake_case))
 (defmethod get-field-ddl-name :default [field-definition]
-  (-> field-definition :name clj-utils/undasherize))
+  (-> field-definition :name csk/->snake_case))
 
 
 

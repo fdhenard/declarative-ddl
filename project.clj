@@ -8,7 +8,8 @@
                  [clojure.java-time "0.3.2"]
                  [conman "0.8.3"]
                  [org.clojure/clojurescript "1.10.520"]
-                 [funcool/decimal "1.0.2"]]
+                 [funcool/decimal "1.0.2"]
+                 [camel-snake-kebab "0.4.1"]]
   :repl-options {:init-ns declarative-ddl.core}
   :source-paths ["src/clj" "src/cljc" "src/cljs"]
   :plugins [[lein-cljsbuild "1.1.7"]
