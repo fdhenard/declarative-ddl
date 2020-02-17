@@ -68,7 +68,8 @@
     (let [sql-seq (map #(create-table %) (change-record/get-table-definitions this))]
       (apply str sql-seq)))
   (get-ddl-drop [this]
-    (let [sql-seq (map #(str "DROP TABLE " %) (change-record/get-table-ddl-names this))])))
+    (let [sql-seq (map #(str "DROP TABLE " %) (change-record/get-table-ddl-names this))]
+      (apply str sql-seq))))
 
 (derive PostgresMultiTableAddDrop ::change-record/MultiTableAddDrop)
 
