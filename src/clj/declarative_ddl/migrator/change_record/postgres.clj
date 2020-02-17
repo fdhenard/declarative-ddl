@@ -62,7 +62,15 @@
       (apply str sql-vec)))
 
 
+(defrecord PostgresMultiTableAddDrop [diff]
+  change-record/DdlAddDropGenable
+  (get-ddl-add [this]
+    (let [sql-seq (map #(create-table %) (change-record/get-table-definitions this))]
+      (apply str sql-seq)))
+  (get-ddl-drop [this]
+    (let [sql-seq (map #(str "DROP TABLE " %) (change-record/get-table-ddl-names this))])))
 
+(derive PostgresMultiTableAddDrop ::change-record/MultiTableAddDrop)
 
 
 
@@ -100,6 +108,16 @@
 
 (derive PostgresUniqueConstraintAddDrop
         ::change-record/UniqueConstraintAddDrop)
+
+
+(defrecord PostgresNotNullConstraintAddDrop [diff]
+  change-record/DdlAddDropGenable
+  (get-ddl-add [this]
+    (str "ALTER COLUMN " (change-record/get-field-ddl-name this) " SET NOT NULL"))
+  (get-ddl-drop [this]
+    (str "ALTER COLUMN " (change-record/get-field-ddl-name this) " DROP NOT NULL")))
+
+(derive PostgresNotNullConstraintAddDrop ::change-record/NotNullConstraintAddDrop)
 
 
 

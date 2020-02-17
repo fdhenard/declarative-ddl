@@ -3,8 +3,8 @@
   :url "https://github.com/fdhenard/declarative-ddl"
   :license {:name "MIT"
             :url "https://opensource.org/licenses/MIT"}
-  :dependencies [[org.clojure/clojure "1.10.0"]
-                 [diff-as-list "2.2.6"]
+  :dependencies [[org.clojure/clojure "1.10.1"]
+                 [diff-as-list "3.0.1"]
                  [clojure.java-time "0.3.2"]
                  [conman "0.8.3"]
                  [org.clojure/clojurescript "1.10.520"]
@@ -21,8 +21,7 @@
                                          :output-dir "target/js/test/"
                                          :target :nodejs
                                          :main declarative-ddl.runner
-                                         :optimizations :none
-                                         }}
+                                         :optimizations :none}}
                        :repl {:source-paths ["src/cljs" "src/cljc"]
                               :figwheel true
                               :compiler {:main "declarative-ddl.core"

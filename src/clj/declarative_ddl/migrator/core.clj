@@ -1,4 +1,4 @@
-(ns declarative-ddl.migrator.core
+4(ns declarative-ddl.migrator.core
   (:require [clojure.pprint :as pp]
             [clojure.java.jdbc :as jdbc]
             [clojure.spec.alpha :as spec]
@@ -32,47 +32,29 @@
     (map #(.getName %) $)
     (sort $)))
 
-(defn value-difference-to-ddl [val-diff]
-  (cond
-    (empty? (:path val-diff))
-    (cond
-      (nil? (:val-1 val-diff))
-      (as-> (:val-2 val-diff) $
-        (map clj-utils/remove-key-from-kv-pair $)
-        (map postgres/create-table $)
-        (interpose "\n" $)
-        (apply str $))
-      :else
-      (throw (Exception. "this case has not yet been implemented - value of val-1")))
-    :else
-    (throw (Exception. "this case has not yet been implemented - size of path"))))
 
-(defn add-rems-to-ddl [diff-in]
-  (let [missing-in-1 (:keys-missing-in-1 diff-in)
-        missing-in-2 (:keys-missing-in-2 diff-in)
-        missing-in-1 (map #(assoc % :missing-in :one) missing-in-1)
-        missing-in-2 (map #(assoc % :missing-in :two) missing-in-2)
-        all-add-rems (concat missing-in-1 missing-in-2)
-        as-change-records (map
-                           #(change-rec-factories/make-change-record % :postgres)
-                           all-add-rems)
-        grouped-by (group-by change-record/get-group as-change-records)
+(defn diffs->ddl [diff-items]
+  (let [as-change-recs
+        (map #(change-rec-factories/make-change-record % :postgres) diff-items)
+        grouped-by (group-by change-record/get-group as-change-recs)
         top-level-changes (:top-level grouped-by)
-        top-level-ddl (map #(change-record/get-ddl-from-change-rec % :forward) top-level-changes)
+        top-level-ddl
+        (map #(change-record/get-ddl-from-change-rec % :forward)
+             top-level-changes)
         remaining-grouped (dissoc grouped-by :top-level)
-        grouped-change-records (map
-                                #(change-rec-factories/make-grouped-change-record
-                                  %
-                                  :postgres)
-                                remaining-grouped)
-        grouped-change-ddls (map #(change-record/get-ddl-from-change-rec % :forward) grouped-change-records)]
+        grouped-change-recs
+        (map #(change-rec-factories/make-grouped-change-record
+               %
+               :postgres)
+             remaining-grouped)
+        grouped-change-ddls
+        (map #(change-record/get-ddl-from-change-rec % :forward)
+             grouped-change-recs)]
     (concat top-level-ddl grouped-change-ddls)))
 
 
-(defn diff-to-ddl [diff-in]
-  (let [val-diff-ddl (map value-difference-to-ddl (:value-differences diff-in))
-        diffs-xformed (add-rems-to-ddl diff-in)
-        result-ddl-seq (concat val-diff-ddl diffs-xformed)]
+(defn diff->ddl [diff-in]
+  (let [result-ddl-seq (diffs->ddl (:differences diff-in))]
     (as-> result-ddl-seq $
       (interpose "\n" $)
       (apply str $))))
@@ -143,7 +125,7 @@
                           :or {dry-run false}}]
   (let [db-conn (conman/connect! {:jdbc-url db-url})
         all-mig-file-names (get-all-migration-file-names)
-        ;; _ (println "all-mig-file-names:" all-mig-file-names)
+        #_ (println "all-mig-file-names:" all-mig-file-names)
         ]
     (if (empty? all-mig-file-names)
       ;; TODO - better logging
@@ -173,7 +155,7 @@
                 (let [mig-file-path (str migrations-dir-name "/" remaining-mig-file-name)
                       mig-number (get-migration-number-from-filename remaining-mig-file-name)
                       mig-diff (edn-read mig-file-path)
-                      the-ddl (diff-to-ddl mig-diff)
+                      the-ddl (diff->ddl mig-diff)
                       _ (println (str "the-ddl:\n" the-ddl))]
                   (if dry-run
                     (println "dry run only; DDL not exectuted.")

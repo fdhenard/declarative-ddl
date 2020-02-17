@@ -12,14 +12,18 @@
          [:postgres ::change-record/FieldAddDrop]
          postgres/->PostgresFieldAddDrop
          [:postgres ::change-record/UniqueConstraintAddDrop]
-         postgres/->PostgresUniqueConstraintAddDrop}
-        constructor (get constructor-map [db-dialect change-rec-type])
-        _ (when (nil? constructor)
+         postgres/->PostgresUniqueConstraintAddDrop
+         [:postgres ::change-record/NotNullConstraintAddDrop]
+         postgres/->PostgresNotNullConstraintAddDrop
+         [:postgres ::change-record/MultiTableAddDrop]
+         postgres/->PostgresMultiTableAddDrop}
+        constructor-func (get constructor-map [db-dialect change-rec-type])
+        _ (when (nil? constructor-func)
             (throw (RuntimeException.
-                    (str "could not find constructor for db-dialect = "
+                    (str "could not find constructor-func for db-dialect = "
                          db-dialect ", and change record type = "
                          change-rec-type))))]
-    (constructor diff)))
+    (constructor-func diff)))
 
 
 (defn make-grouped-change-record [[grouping change-records] db-dialect]
