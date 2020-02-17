@@ -53,7 +53,7 @@
     (concat top-level-ddl grouped-change-ddls)))
 
 
-(defn diff->ddl [diff-in]
+(defn dal-out->ddl [diff-in]
   (let [result-ddl-seq (diffs->ddl (:differences diff-in))]
     (as-> result-ddl-seq $
       (interpose "\n" $)
@@ -155,7 +155,7 @@
                 (let [mig-file-path (str migrations-dir-name "/" remaining-mig-file-name)
                       mig-number (get-migration-number-from-filename remaining-mig-file-name)
                       mig-diff (edn-read mig-file-path)
-                      the-ddl (diff->ddl mig-diff)
+                      the-ddl (dal-out->ddl mig-diff)
                       _ (println (str "the-ddl:\n" the-ddl))]
                   (if dry-run
                     (println "dry run only; DDL not exectuted.")

@@ -45,7 +45,7 @@
                      "    is_active BOOLEAN NOT NULL DEFAULT(false),"
                      "    pass VARCHAR(300) NOT NULL"
                      ");"])
-          actual (diff->ddl the-diff)
+          actual (dal-out->ddl the-diff)
           ;; _ (println "actual:" actual)
           ]
       (is (= expected actual)))))
@@ -73,7 +73,7 @@
                                        :references :cledgers-user}}}
                                     :missing-in :one})]
                     :dal-version "3.0.0-SNAPSHOT"}
-          actual (diff->ddl the-diff)
+          actual (dal-out->ddl the-diff)
           ;; _ (println "actual:" actual)
           expected (str/join
               "\n"
@@ -109,7 +109,7 @@
                        :fields [{:name "new-table-field"
                                  :type :int}]}]
           the-diff (dal/diffl (xform-ents ents-before) (xform-ents ents-after))
-          actual (diff->ddl the-diff)
+          actual (dal-out->ddl the-diff)
           #_ (println (str
                       "actual type = " (type actual) "\n"
                       "actual:\n" actual))
@@ -138,7 +138,7 @@
                                  :unique true}]}]
           the-diff (dal/diffl (xform-ents ents-before) (xform-ents ents-after))
           #_ (println (str "the-diff:\n" (cljc-utils/pp the-diff)))
-          actual (diff->ddl the-diff)
+          actual (dal-out->ddl the-diff)
           #_ (println (str "actual:\n" (cljc-utils/pp actual)))
           expected (->> ["ALTER TABLE test_table"
                          "    ADD CONSTRAINT test_table_should_be_unique_unique UNIQUE (should_be_unique);"]
@@ -162,7 +162,7 @@
                                :type :foreign-key
                                :references :new-something}]}]
         the-diff (dal/diffl (xform-ents ents-before) (xform-ents ents-after))
-        actual (diff->ddl the-diff)
+        actual (dal-out->ddl the-diff)
         expected (->> ["CREATE TABLE new_something ("
                        "    id SERIAL PRIMARY KEY,"
                        "    some_field INTEGER NOT NULL"
@@ -190,7 +190,7 @@
                                :max-length 32}]}]
         the-diff (dal/diffl (xform-ents ents-before) (xform-ents ents-after))
         #_ (clojure.pprint/pprint the-diff)
-        actual (diff->ddl the-diff)
+        actual (dal-out->ddl the-diff)
         expected (->> ["ALTER TABLE test_table"
                        "    ALTER COLUMN a_field SET NOT NULL;"]
                       (interpose "\n")
@@ -209,7 +209,7 @@
                                :max-length 32
                                :null false}]}]
         the-diff (dal/diffl (xform-ents ents-before) (xform-ents ents-after))
-        actual (diff->ddl the-diff)
+        actual (dal-out->ddl the-diff)
         expected (->> ["ALTER TABLE test_table"
                        "    ALTER COLUMN a_field SET NOT NULL;"]
                       (interpose "\n")
@@ -227,7 +227,7 @@
                                :max-length 32
                                :null true}]}]
         the-diff (dal/diffl (xform-ents ents-before) (xform-ents ents-after))
-        actual (diff->ddl the-diff)
+        actual (dal-out->ddl the-diff)
         expected (->> ["ALTER TABLE test_table"
                        "    ALTER COLUMN a_field DROP NOT NULL;"]
                       (interpose "\n")
@@ -247,7 +247,7 @@
                                :null true}]}]
         the-diff (dal/diffl (xform-ents ents-before) (xform-ents ents-after))
         #_ (clojure.pprint/pprint the-diff)
-        actual (diff->ddl the-diff)
+        actual (dal-out->ddl the-diff)
         expected (->> ["ALTER TABLE test_table"
                        "    ALTER COLUMN a_field DROP NOT NULL;"]
                       (interpose "\n")
