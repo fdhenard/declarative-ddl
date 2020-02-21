@@ -7,7 +7,9 @@
 
 
 (defn diff-to-change-record-type [diff]
-  (let [diff-path (:path diff)]
+  (let [#_ (clojure.pprint/pprint diff)
+        #_ (clojure.pprint/pprint {:is-record? (record? diff)})
+        diff-path (:path diff)]
     (cond
       (and (instance? diff_as_list.core.KeyMissingDiff diff)
            (= 1 (count diff-path)))

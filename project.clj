@@ -4,12 +4,19 @@
   :license {:name "MIT"
             :url "https://opensource.org/licenses/MIT"}
   :dependencies [[org.clojure/clojure "1.10.1"]
-                 [diff-as-list "3.0.1"]
+                 [diff-as-list "3.0.2"]
                  [clojure.java-time "0.3.2"]
                  [conman "0.8.3"]
                  [org.clojure/clojurescript "1.10.520"]
                  [funcool/decimal "1.0.2"]
-                 [camel-snake-kebab "0.4.1"]]
+                 [camel-snake-kebab "0.4.1"]
+                 [org.clojure/tools.cli "0.4.2"]
+                 [org.postgresql/postgresql "42.2.10"]
+                 ;; [org.clojure/tools.logging "0.6.0"]
+                 ;; #_[ch.qos.logback/logback-core "1.2.3"]
+                 ;; [org.slf4j/slf4j-api "1.7.30"]
+                 ;; [org.slf4j/slf4j-simple "1.7.30"]
+                 ]
   :repl-options {:init-ns declarative-ddl.core}
   :source-paths ["src/clj" "src/cljc" "src/cljs"]
   :plugins [[lein-cljsbuild "1.1.7"]
@@ -27,4 +34,5 @@
                               :compiler {:main "declarative-ddl.core"
                                          :output-to "target/js/repl/main.js"
                                          :output-dir "target/js/repl/"}}}}
-  :test-paths ["test/clj"])
+  :test-paths ["test/clj"]
+  :main declarative-ddl.cli)

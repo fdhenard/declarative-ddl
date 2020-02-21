@@ -65,10 +65,16 @@
 (defrecord PostgresMultiTableAddDrop [diff]
   change-record/DdlAddDropGenable
   (get-ddl-add [this]
-    (let [sql-seq (map #(create-table %) (change-record/get-table-definitions this))]
+    (let [sql-seq (->> this
+                       change-record/get-table-definitions
+                       (map create-table)
+                       (interpose "\n"))]
       (apply str sql-seq)))
   (get-ddl-drop [this]
-    (let [sql-seq (map #(str "DROP TABLE " %) (change-record/get-table-ddl-names this))]
+    (let [sql-seq (->> this
+                       change-record/get-table-ddl-names
+                       (map #(str "DROP TABLE " %))
+                       (interpose "\n"))]
       (apply str sql-seq))))
 
 (derive PostgresMultiTableAddDrop ::change-record/MultiTableAddDrop)

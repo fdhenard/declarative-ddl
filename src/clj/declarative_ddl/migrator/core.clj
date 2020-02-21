@@ -1,7 +1,8 @@
-4(ns declarative-ddl.migrator.core
+(ns declarative-ddl.migrator.core
   (:require [clojure.pprint :as pp]
             [clojure.java.jdbc :as jdbc]
             [clojure.spec.alpha :as spec]
+            #_[clojure.tools.logging :as log]
             [java-time :as time]
             [conman.core :as conman]
             [diff-as-list.core :as dal]
@@ -54,46 +55,50 @@
 
 
 (defn dal-out->ddl [diff-in]
-  (let [result-ddl-seq (diffs->ddl (:differences diff-in))]
+  (let [diff-records (map dal/diff-map->record (:differences diff-in))
+        result-ddl-seq (diffs->ddl diff-records)]
     (as-> result-ddl-seq $
       (interpose "\n" $)
       (apply str $))))
 
 (defn make-migration [entities-old-diff-list entities-new]
-  (let [entities-patched (reduce #(dal/patch %1 %2) nil entities-old-diff-list)
+  (let [#_ (clojure.pprint/pprint entities-old-diff-list)
+        entities-patched (reduce #(dal/patch %1 %2) nil entities-old-diff-list)
         entities-for-diff (dddl-cljc/xform-entities-for-diff entities-new)]
     (dal/diffl entities-patched entities-for-diff)))
 
 
-(def migrations-dir-name "migrations-dddl")
-(def migrations-dir (clojure.java.io/file migrations-dir-name))
+;; (def migrations-dir-name "migrations-dddl")
+;; (def migrations-dir (clojure.java.io/file migrations-dir-name))
 
-(defn get-all-migration-file-names []
+(defn get-all-migration-file-names [migrations-dir]
   (fnames-in-dir migrations-dir))
 
 ;; (def ^:dynamic entities nil)
 (spec/check-asserts true)
 
-(defn make-migration-file! [entities-in]
-  (let [entities-validated (spec/assert ::entities/entities entities-in)
+(defn make-migration-file! [entities-in migrations-dir-path]
+  (let [migrations-dir (clojure.java.io/file migrations-dir-path)
+        entities-validated (spec/assert ::entities/entities entities-in)
         ensure-mig-dir-exists-res
         (when-not (.exists migrations-dir)
           (.mkdir migrations-dir)
           (when-not (.exists migrations-dir)
             (throw (Exception. "should exist"))))
-        existing-mig-fpaths (map #(str migrations-dir-name "/" %) (get-all-migration-file-names))
+        existing-mig-fpaths
+        (map #(str migrations-dir-path "/" %)
+             (get-all-migration-file-names migrations-dir))
         diffs (map edn-read existing-mig-fpaths)
-        next-diff (make-migration diffs entities-validated)]
-    (if (and (empty? (:keys-missing-in-1 next-diff))
-             (empty? (:keys-missing-in-2 next-diff))
-             (empty? (:value-differences next-diff)))
-      (throw (Exception. "no changes in entities"))
+        next-diff (make-migration diffs entities-validated)
+        #_ (clojure.pprint/pprint next-diff)]
+    (if (empty? (:differences next-diff))
+      (println "no changes in entities")
       (let [mig-num (-> (count existing-mig-fpaths) inc)
             mig-time-str (as-> (time/zoned-date-time) $
                            (.withZoneSameInstant $ (ZoneId/of "UTC"))
                            (time/format "yyyy-MM-dd'T'HH-mm-ss-SSSX" $))
             mig-fname (format "%04d-migration-%s.edn" mig-num mig-time-str)
-            file-out-path (str migrations-dir-name "/" mig-fname)]
+            file-out-path (str migrations-dir-path "/" mig-fname)]
         (edn-write next-diff file-out-path)))))
 
 (def migration-table-ddl
@@ -121,45 +126,36 @@
   (-> (subs migration-fname 0 4) Integer/parseInt))
 
 
-(defn migrate! [db-url & {:keys [dry-run]
-                          :or {dry-run false}}]
+(defn migrate! [db-url
+                migrations-dir-path
+                & {:keys [dry-run]
+                   :or {dry-run false}}]
   (let [db-conn (conman/connect! {:jdbc-url db-url})
-        all-mig-file-names (get-all-migration-file-names)
-        #_ (println "all-mig-file-names:" all-mig-file-names)
-        ]
+        migrations-dir (clojure.java.io/file migrations-dir-path)
+        all-mig-file-names (get-all-migration-file-names migrations-dir)
+        #_ (println "all-mig-file-names:" all-mig-file-names)]
     (if (empty? all-mig-file-names)
       ;; TODO - better logging
       (println "nothing to do here.  No migration files")
       (try
         (jdbc/with-db-transaction [t-conn db-conn]
           (let [last-mig-num (get-last-migration-number t-conn)
-                ;; _ (println "last-mig-num:" last-mig-num)
-                ;; db-says-initial? (nil? last-mig-num)
-                ;; files-say-initial?
-                ;; (let [mig-num-from-last-file
-                ;;       (get-migration-number-from-filename (last all-mig-file-names))
-                ;;       ;; _ (println "mig-num-from-last-file: " mig-num-from-last-file)
-                ;;       ]
-                ;;   (= mig-num-from-last-file 1))
-                ;; both-say-initial? (= db-says-initial? files-say-initial?)
-                ]
-            ;; if (not both-say-initial?)
-            ;; (throw (Exception. (str "conflicting results on whether this is the initial migration or not. db-says-initial? = " db-says-initial? ", files-say-initial? = " files-say-initial?)))
-            (let [remaining-mig-file-names (if (nil? last-mig-num)
-                                             all-mig-file-names
-                                             (filter #(> (get-migration-number-from-filename %) last-mig-num) all-mig-file-names))
-                  _ (println "remaining-mig-file-names:" remaining-mig-file-names)
-                  init-result (when (nil? last-mig-num)
-                                (jdbc/execute! t-conn [migration-table-ddl]))]
-              (doseq [remaining-mig-file-name remaining-mig-file-names]
-                (let [mig-file-path (str migrations-dir-name "/" remaining-mig-file-name)
-                      mig-number (get-migration-number-from-filename remaining-mig-file-name)
-                      mig-diff (edn-read mig-file-path)
-                      the-ddl (dal-out->ddl mig-diff)
-                      _ (println (str "the-ddl:\n" the-ddl))]
-                  (if dry-run
-                    (println "dry run only; DDL not exectuted.")
-                    (let [ddl-exec-res (jdbc/execute! t-conn the-ddl)
-                          migrations-table-append-res (jdbc/insert! t-conn :migrations {:number mig-number})])))))))
+                remaining-mig-file-names (if (nil? last-mig-num)
+                                           all-mig-file-names
+                                           (filter #(> (get-migration-number-from-filename %) last-mig-num) all-mig-file-names))
+                _ (println "remaining-mig-file-names:" remaining-mig-file-names)
+                _ (when (and (not dry-run)
+                             (not (does-migration-table-exist? db-conn)))
+                    (jdbc/execute! t-conn [migration-table-ddl]))]
+            (doseq [remaining-mig-file-name remaining-mig-file-names]
+              (let [mig-file-path (str migrations-dir-path "/" remaining-mig-file-name)
+                    mig-number (get-migration-number-from-filename remaining-mig-file-name)
+                    mig-diff (edn-read mig-file-path)
+                    the-ddl (dal-out->ddl mig-diff)
+                    _ (println (str "the-ddl:\n" the-ddl))]
+                (if dry-run
+                  (println "dry run only; DDL not exectuted.")
+                  (let [ddl-exec-res (jdbc/execute! t-conn the-ddl)
+                        migrations-table-append-res (jdbc/insert! t-conn :migrations {:number mig-number})]))))))
         (finally
           (conman/disconnect! db-conn))))))
