@@ -102,6 +102,13 @@ example:
     $ lein run -d ../app_with_db make-migration
 
 #### migrate
+
+##### dry run
+
+    $ lein run -d ../app_with_db -b "postgresql://localhost/app_db?user=app" migrate
+
+##### execute
+
     $ lein run -d ../app_with_db -b "postgresql://localhost/app_db?user=app" -e migrate
 
 ## Development

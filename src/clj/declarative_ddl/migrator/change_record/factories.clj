@@ -18,11 +18,11 @@
          [:postgres ::change-record/MultiTableAddDrop]
          postgres/->PostgresMultiTableAddDrop}
         constructor-func (get constructor-map [db-dialect change-rec-type])
-        _ (when (nil? constructor-func)
-            (throw (RuntimeException.
-                    (str "could not find constructor-func for db-dialect = "
-                         db-dialect ", and change record type = "
-                         change-rec-type))))]
+        _ (when-not constructor-func
+            (throw (ex-info
+                    "could not find constructor-func for db-dialect, and change record type"
+                    {:db-dialect db-dialect
+                     :change-record-type change-rec-type})))]
     (constructor-func diff)))
 
 
@@ -31,9 +31,9 @@
         constructor-map
         {[:postgres ::change-record/AlterTable] postgres/->PostgresAlterTable}
         constructor (get constructor-map [db-dialect group-category])
-        _ (when (nil? constructor)
-            (throw (RuntimeException.
-                    (str "could not find a constructor for dialect = "
-                         db-dialect ", and group category = "
-                         group-category))))]
+        _ (when-not constructor
+            (throw (ex-info
+                    "could not find a constructor for dialect, and group category"
+                    {:db-dialect db-dialect
+                     :group-category group-category})))]
     (constructor (second grouping) change-records)))

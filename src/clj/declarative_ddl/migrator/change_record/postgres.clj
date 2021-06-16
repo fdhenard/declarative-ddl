@@ -131,7 +131,7 @@
 
 (defrecord PostgresAlterTable [table-name-kw change-records]
   change-record/OtherDdlGenable
-  (get-ddl [this forward-or-backward]
+  (get-ddl [_this forward-or-backward]
     (let [field-ddls (->> change-records
                           (map #(change-record/get-ddl-from-change-rec
                                  %

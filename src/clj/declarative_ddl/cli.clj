@@ -1,7 +1,8 @@
 (ns declarative-ddl.cli
   (:require [clojure.edn :as edn]
+            [clojure.pprint :as pp]
+            [clojure.string :as string]
             [clojure.tools.cli :as cli]
-            [clojure.pprint :as pprint]
             [declarative-ddl.migrator.core :as migrator])
   #_(:import #_[ch.qos.logback Logger Level]
            [org.slf4j Logger LoggerFactory Level]))
@@ -23,16 +24,16 @@
         "  migrate          Migrate through most current migration"
         ""
         "Please refer to the manual page for more information."]
-       (clojure.string/join \newline)))
+       (string/join \newline)))
 
 (defn error-msg [errors]
   (str "The following errors occurred while parsing your command:\n\n"
-       (clojure.string/join \newline errors)))
+       (string/join \newline errors)))
 
 
 (defn validate-args [args]
   (let [{:keys [options arguments errors summary]} (cli/parse-opts args cli-options)
-        #_ (pprint/pprint {:options options
+        #_ (pp/pprint {:options options
                           :arguments arguments
                           :errors errors
                           :summary summary})]
@@ -59,14 +60,14 @@
     ;; (-> (LoggerFactory/getLogger "declarative-ddl")
     ;;     (.setLevel Level/ALL))
     (let [{:keys [action options exit-message ok?]} (validate-args args)
-          #_ (clojure.pprint/pprint
+          #_ (pp/pprint
              {:action action
               :options options
               :exit-message exit-message
               :ok? ok?
               :execute (:execute options)
               :not-execute (not (:execute options))})
-          #_ (pprint/pprint entities)]
+          #_ (pp/pprint entities)]
      (if exit-message
        (exit (if ok? 0 1) exit-message)
        (let [dddl-dir (str (:dir options) "/resources/declarative-ddl")

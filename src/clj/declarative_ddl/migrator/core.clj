@@ -1,16 +1,15 @@
 (ns declarative-ddl.migrator.core
-  (:require [clojure.pprint :as pp]
+  (:require [clojure.edn :as edn]
+            [clojure.pprint :as pp]
+            [clojure.java.io :as io]
+            [clojure.string :as string]
             [clojure.java.jdbc :as jdbc]
             [clojure.spec.alpha :as spec]
-            #_[clojure.tools.logging :as log]
             [java-time :as time]
             [conman.core :as conman]
             [diff-as-list.core :as dal]
             [declarative-ddl.cljc.core :as dddl-cljc]
             [declarative-ddl.entities.core :as entities]
-            [declarative-ddl.clj-utils.core :as clj-utils]
-            [declarative-ddl.cljc.utils.core :as cljc-utils]
-            [declarative-ddl.migrator.change-record.postgres :as postgres]
             [declarative-ddl.migrator.change-record.core :as change-record]
             [declarative-ddl.migrator.change-record.factories :as change-rec-factories])
   (:import [java.time ZoneId]))
@@ -22,9 +21,9 @@
 
 (defn edn-read [fpath]
   (-> fpath
-      clojure.java.io/reader
+      io/reader
       java.io.PushbackReader.
-      clojure.edn/read))
+      edn/read))
 
 (defn fnames-in-dir [dir]
   (as-> dir $
@@ -80,11 +79,10 @@
 (defn make-migration-file! [entities-in migrations-dir-path]
   (let [migrations-dir (clojure.java.io/file migrations-dir-path)
         entities-validated (spec/assert ::entities/entities entities-in)
-        ensure-mig-dir-exists-res
-        (when-not (.exists migrations-dir)
-          (.mkdir migrations-dir)
-          (when-not (.exists migrations-dir)
-            (throw (Exception. "should exist"))))
+        _ (when-not (.exists migrations-dir)
+            (.mkdir migrations-dir)
+            (when-not (.exists migrations-dir)
+              (throw (ex-info "should exist" {}))))
         existing-mig-fpaths
         (map #(str migrations-dir-path "/" %)
              (get-all-migration-file-names migrations-dir))
@@ -116,8 +114,7 @@
       (#(not (nil? %)))))
 
 (defn get-last-migration-number [db-conn]
-  (if (not (does-migration-table-exist? db-conn))
-    nil
+  (when (does-migration-table-exist? db-conn)
     (-> (jdbc/query db-conn ["SELECT MAX(number) FROM migrations"])
         first
         :max)))
@@ -156,6 +153,10 @@
                 (if dry-run
                   (println "dry run only; DDL not exectuted.")
                   (let [ddl-exec-res (jdbc/execute! t-conn the-ddl)
-                        migrations-table-append-res (jdbc/insert! t-conn :migrations {:number mig-number})]))))))
+                        migrations-table-append-res (jdbc/insert! t-conn :migrations {:number mig-number})
+                        _ (println "Migration executed (not a dry run)")
+                        _ (pp/pprint {:execute-results
+                                      {:ddl-exec-res ddl-exec-res
+                                       :migrations-table_append-res migrations-table-append-res}})]))))))
         (finally
           (conman/disconnect! db-conn))))))

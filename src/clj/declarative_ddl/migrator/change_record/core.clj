@@ -1,14 +1,15 @@
 (ns declarative-ddl.migrator.change-record.core
-  (:require [clojure.spec.alpha :as spec]
+  (:require [clojure.pprint :as pp]
+            [clojure.spec.alpha :as spec]
             [camel-snake-kebab.core :as csk]
-            [diff-as-list.core :as dal]
+            #_[diff-as-list.core :as dal]
             [declarative-ddl.entities.core :as entities]
-            [declarative-ddl.clj-utils.core :as clj-utils]))
+            #_[declarative-ddl.clj-utils.core :as clj-utils]))
 
 
 (defn diff-to-change-record-type [diff]
-  (let [#_ (clojure.pprint/pprint diff)
-        #_ (clojure.pprint/pprint {:is-record? (record? diff)})
+  (let [#_ (pp/pprint diff)
+        #_ (pp/pprint {:is-record? (record? diff)})
         diff-path (:path diff)]
     (cond
       (and (instance? diff_as_list.core.KeyMissingDiff diff)
@@ -31,8 +32,7 @@
            (= 4 (count diff-path))
            (= :null (get diff-path 3)))
       ::NotNullConstraintAddDrop
-      :else (throw (RuntimeException.
-                    "this case has not been implemented")))))
+      :else (throw (ex-info "this case has not been implemented" {})))))
 
 
 
@@ -81,7 +81,7 @@
 
 ;; method for all ::ChangeRecord
 (defmethod get-ddl-from-change-rec ::DdlAddDropGenable [dadg forward-or-backward]
-  (let [#_ (clojure.pprint/pprint dadg)
+  (let [#_ (pp/pprint dadg)
         reverse-add-drop {:add :drop
                           :drop :add}
         dadg-diff (:diff dadg)
@@ -100,11 +100,11 @@
                          (cond
                            val-2 :one
                            val-1 :two
-                           :else (throw (RuntimeException. "should not be here")))
-                         :else (throw (RuntimeException. "should not be here"))))
+                           :else (throw (ex-info "should not be here" {})))
+                         :else (throw (ex-info "should not be here" {}))))
                      (instance? diff_as_list.core.KeyMissingDiff dadg-diff)
                      (:missing-in dadg-diff)
-                     :else (throw (RuntimeException. "should not be here")))
+                     :else (throw (ex-info "should not be here" {})))
         missing-in-1->forward-add-or-drop (get-missing-in-1->forward-add-or-drop dadg)
         missing-in-fwd-bwd->add-or-drop
         {[:one :forward] missing-in-1->forward-add-or-drop
@@ -113,14 +113,17 @@
          [:two :forward] (reverse-add-drop missing-in-1->forward-add-or-drop)}
         add-or-drop (missing-in-fwd-bwd->add-or-drop [missing-in forward-or-backward])
         _ (when (nil? add-or-drop)
-            (throw (RuntimeException. (str "invalid missing-in and forward-or-backward "
-                                                    "; missing-in = " missing-in
-                                                    ", forward-or-backward = " forward-or-backward))))
+            (throw (ex-info
+                    "invalid missing-in and forward-or-backward "
+                    {:missing-in missing-in
+                     :forward-or-backward forward-or-backward})))
         action-map {:add get-ddl-add
                     :drop get-ddl-drop}
         action-fn (get action-map add-or-drop)
         _ (when (nil? action-fn)
-            (throw (RuntimeException. (str "can't find action for add-or-drop = " add-or-drop))))]
+            (throw (ex-info
+                    "can't find action for add-or-drop"
+                    {:add-or-drop add-or-drop})))]
     (action-fn dadg)))
 
 (defprotocol OtherDdlGenable
@@ -141,7 +144,7 @@
 (derive ::TableAddDrop ::DdlAddDropGenable)
 
 ;; method for ::DdlAddDropGenable
-(defmethod get-group ::TableAddDrop [tad]
+(defmethod get-group ::TableAddDrop [_tad]
   :top-level)
 
 ;; defined for ::TableAddDrop
@@ -164,7 +167,7 @@
 (derive ::MultiTableAddDrop ::DdlAddDropGenable)
 
 ;; method for ::DdlAddDropGenable
-(defmethod get-group ::MultiTableAddDrop [mtad]
+(defmethod get-group ::MultiTableAddDrop [_mtad]
   :top-level)
 
 (defmulti get-table-definitions class)
